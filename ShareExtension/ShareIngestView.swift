@@ -75,10 +75,10 @@ private func ingestBestEffort() {
             NSLog("[Share] 扩展容器内无共享图片，跳过入库")
             return
         }
-        // 与主 App PHLibraryService 同款调用（已验证可编译）：Data → 相册
+        // PHAssetCreationRequest 持有 creationRequestForAsset(from: Data) 重载
         PHPhotoLibrary.shared().performChanges {
             for data in photos {
-                _ = PHAssetChangeRequest.creationRequestForAsset(from: data)
+                _ = PHAssetCreationRequest.creationRequestForAsset(from: data)
             }
         }
         PHPhotoLibrary.shared().synchronizeChanges()
