@@ -17,7 +17,9 @@ jobs:
         run: xcodegen generate
 
       - name: Build & Archive
+        id: build
         run: |
+          mkdir -p logs
           xcodebuild -project AperturePro.xcodeproj \
             -scheme AperturePro \
             -configuration Release \
@@ -26,10 +28,18 @@ jobs:
             build \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            2>&1 | tail -80
+            > logs/sim_build.log 2>&1
+          RC=$?
+          echo "=== 模拟器构建 RC=$RC（完整日志见上传的 build-logs）==="
+          echo "--- 错误行（最多 60 条）---"
+          grep -E "error:" logs/sim_build.log | head -60 || true
+          echo "--- 结尾 25 行 ---"
+          tail -25 logs/sim_build.log
+          exit $RC
 
       - name: Archive
         run: |
+          mkdir -p logs
           xcodebuild -project AperturePro.xcodeproj \
             -scheme AperturePro \
             -configuration Release \
@@ -37,7 +47,14 @@ jobs:
             archive \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            2>&1 | tail -80
+            > logs/archive.log 2>&1
+          RC=$?
+          echo "=== Archive RC=$RC（完整日志见上传的 build-logs）==="
+          echo "--- 错误行（最多 60 条）---"
+          grep -E "error:" logs/archive.log | head -60 || true
+          echo "--- 结尾 25 行 ---"
+          tail -25 logs/archive.log
+          exit $RC
 
       - name: Export Unsigned IPA
         run: |
@@ -60,6 +77,14 @@ jobs:
           name: AperturePro-unsigned.ipa
           path: /workspace/AperturePro-unsigned.ipa
 
+      - name: Upload Build Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: logs/
+          if-no-files-found: ignore
+
       - name: Verify Binary
         run: |
           echo "=== 二进制核验（UTF-8 字节直扫）==="
@@ -67,7 +92,7 @@ jobs:
           if [ -z "$BINARY" ]; then BINARY=$(find build -name "AperturePro" -type f 2>/dev/null | head -1); fi
           if [ -n "$BINARY" ]; then
             echo "Binary: $BINARY ($(wc -c < "$BINARY") bytes)"
-            python3 -c "import sys; b=open(sys.argv[1],'rb').read(); [print(' ', c, b.count(c.encode('utf-8'))) for c in ['光圈','系统相册','文档扫描','慢动作','夜景','拼长图','白平衡','iCloud','Live','全景']]" "$BINARY"
+            python3 -c "import sys; b=open(sys.argv[1],'rb').read(); [print(' ', c, b.count(c.encode('utf-8'))) for c in ['光圈','系统相册','文档扫描','慢动作','夜景','拼长图','白平衡','iCloud','全景','延时']]" "$BINARY"
           fi
           echo "=== 版本核验 ==="
           python3 -c "import plistlib, glob; [print(' ', p, plistlib.load(open(p,'rb')).get('CFBundleShortVersionString'), plistlib.load(open(p,'rb')).get('CFBundleVersion')) for p in glob.glob('build/AperturePro.xcarchive/Products/*App/Info.plist')]"

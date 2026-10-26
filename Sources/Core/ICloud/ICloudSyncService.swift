@@ -176,6 +176,9 @@ final class ICloudSyncService: ObservableObject {
         }
         manifest.append(filename)
         manifest = Array(Set(manifest)).suffix(200).map { $0 }
-        try? manifest.write(to: manifestURL, atomically: true, encoding: .utf8)
+        // 写 JSON 数组，读侧用 JSONSerialization 解析，不能用 String.write（会写成文本）
+        if let data = try? JSONSerialization.data(withJSONObject: manifest) {
+            try? data.write(to: manifestURL, options: .atomic)
+        }
     }
 }

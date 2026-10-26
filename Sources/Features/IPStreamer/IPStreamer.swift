@@ -49,6 +49,8 @@ final class IPStreamerService: ObservableObject {
             self.clients.removeAll()
             self.listener?.cancel()
             self.listener = nil
+            self.pumpTimer?.cancel()
+            self.pumpTimer = nil
             self.clientCount = 0
             NSLog("[IPStreamer] 推流服务已停止")
         }
@@ -61,6 +63,9 @@ final class IPStreamerService: ObservableObject {
             let params = NWParameters.tcp
             params.port = NWPort(Self.port)
             listener = try NWListener(using: params)
+            listener?.newConnectionHandler = { [weak self] conn in
+                self?.accept(conn)
+            }
             listener?.stateHandler = { [weak self] state in
                 switch state {
                 case .ready:

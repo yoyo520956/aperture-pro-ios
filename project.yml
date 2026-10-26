@@ -20,8 +20,8 @@ targets:
       path: Sources/App/Info.plist
       properties:
         CFBundleDisplayName: 光圈Pro
-        CFBundleShortVersionString: "1.1.0"
-        CFBundleVersion: "1.1.0(20261027.01)"
+        CFBundleShortVersionString: "1.2.0"
+        CFBundleVersion: "1.2.0(20261027.02)"
         UILaunchScreen: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -53,8 +53,8 @@ targets:
           - com.aperture.pro.icloud
     buildSettings:
       PRODUCT_BUNDLE_IDENTIFIER: com.aperture.pro
-      MARKETING_VERSION: "1.1.0"
-      CURRENT_PROJECT_VERSION: "1.1.0(20261027.01)"
+      MARKETING_VERSION: "1.2.0"
+      CURRENT_PROJECT_VERSION: "1.2.0(20261027.02)"
       IPHONEOS_DEPLOYMENT_TARGET: "16.0"
       SWIFT_VERSION: "5.9"
       TARGETED_DEVICE_FAMILY: "1,2"
@@ -77,13 +77,13 @@ targets:
       path: Widget/ApertureProWidget/Info.plist
       properties:
         CFBundleDisplayName: 光圈Pro 组件
-        CFBundleShortVersionString: "1.1.0"
+        CFBundleShortVersionString: "1.2.0"
         CFBundleVersion: "1"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     buildSettings:
       PRODUCT_BUNDLE_IDENTIFIER: com.aperture.pro.widgets
-      MARKETING_VERSION: "1.1.0"
+      MARKETING_VERSION: "1.2.0"
       CURRENT_PROJECT_VERSION: "1"
       IPHONEOS_DEPLOYMENT_TARGET: "16.0"
       SWIFT_VERSION: "5.9"
@@ -103,7 +103,7 @@ targets:
       path: ShareExtension/Info.plist
       properties:
         CFBundleDisplayName: 光圈Pro 分享
-        CFBundleShortVersionString: "1.1.0"
+        CFBundleShortVersionString: "1.2.0"
         CFBundleVersion: "1"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
@@ -116,7 +116,7 @@ targets:
               NSExtensionServiceAllowsFinderLockedContent: true
     buildSettings:
       PRODUCT_BUNDLE_IDENTIFIER: com.aperture.pro.share
-      MARKETING_VERSION: "1.1.0"
+      MARKETING_VERSION: "1.2.0"
       CURRENT_PROJECT_VERSION: "1"
       IPHONEOS_DEPLOYMENT_TARGET: "16.0"
       SWIFT_VERSION: "5.9"

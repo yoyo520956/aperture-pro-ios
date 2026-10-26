@@ -1,7 +1,10 @@
 import SwiftUI
 
+/// IP 推流面板：局域网 TCP 推 JPEG 帧
+/// 接收方直接连 IPStreamerService.serverIP : 8585
 struct IPStreamerView: View {
-    @StateObject private var streamer = IPStreamerService()
+    @ObservedObject private var streamer = IPStreamerService.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         VStack(spacing: 16) {
@@ -25,7 +28,7 @@ struct IPStreamerView: View {
                 if streamer.isStreaming {
                     streamer.stop()
                 } else {
-                    streamer.start { _ in }
+                    streamer.start()
                 }
             } label: {
                 Label(
@@ -36,36 +39,77 @@ struct IPStreamerView: View {
             .buttonStyle(.borderedProminent)
             .tint(streamer.isStreaming ? .red : .blue)
 
-            HStack(spacing: 12) {
-                VStack(spacing: 2) {
-                    Text("端口")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("8585")
-                        .font(.system(size: 16, weight: .medium))
-                }
-                Divider().frame(height: 40)
-                VStack(spacing: 2) {
-                    Text("协议")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("TCP")
-                        .font(.system(size: 16, weight: .medium))
-                }
-                Divider().frame(height: 40)
-                VStack(spacing: 2) {
-                    Text("格式")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("JPEG 帧")
-                        .font(.system(size: 16, weight: .medium))
-                }
+            if streamer.isStreaming {
+                statGrid
+                receiverHint
             }
-            .padding()
-            .background(Color.gray.opacity(0.05))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .padding(.horizontal)
+
+            specsGrid
         }
         .padding()
+        .onChange(of: scenePhase) { phase in
+            // 退到后台就停，避免白占局域网端口与流量
+            if phase != .active && streamer.isStreaming {
+                streamer.stop()
+            }
+        }
+    }
+
+    private var statGrid: some View {
+        HStack(spacing: 12) {
+            cell("在线客户端", "\(streamer.clientCount)")
+            Divider().frame(height: 40)
+            cell("已推帧", "\(streamer.framesPushed)")
+            Divider().frame(height: 40)
+            cell("帧率", "10fps")
+        }
+        .padding()
+        .background(Color.gray.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal)
+    }
+
+    private var specsGrid: some View {
+        HStack(spacing: 12) {
+            cell("端口", "\(IPStreamerService.port)")
+            Divider().frame(height: 40)
+            cell("协议", "TCP")
+            Divider().frame(height: 40)
+            cell("格式", "JPEG 帧")
+        }
+        .padding()
+        .background(Color.gray.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal)
+    }
+
+    private var receiverHint: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("本机地址")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("\(streamer.serverIP):\(IPStreamerService.port)")
+                .font(.system(size: 16, weight: .medium, design: .monospaced))
+            Text("接收方同网段连上后持续收帧：4 字节大端长度 + JPEG 载荷")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(3)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.blue.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal)
+    }
+
+    private func cell(_ title: String, _ value: String) -> some View {
+        VStack(spacing: 2) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 16, weight: .medium, design: .monospaced))
+        }
+        .frame(maxWidth: .infinity)
     }
 }

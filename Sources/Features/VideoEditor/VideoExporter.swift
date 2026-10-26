@@ -2,7 +2,9 @@ import AVFoundation
 import CoreImage
 import Photos
 
-/// 视频导出核心：变速 + 静音 + 滤镜（AVVideoComposition 帧生成器）
+/// 视频导出核心：变速 + 静音 + 滤镜
+/// 滤镜走离线两遍：先逐帧过 CIFilter 顺序写成中间文件（不做随机 seek），
+/// 再用 AVAssetExportSession 组 composition 应用速度与静音
 enum VideoExporter {
     static func export(
         source: URL,
@@ -11,46 +13,66 @@ enum VideoExporter {
         filter: VideoFilter,
         progress: @escaping (Double) -> Void
     ) async -> Bool {
-        let avAsset = AVURLAsset(url: source)
-        guard let assetVideo = avAsset.tracks(withMediaType: .video).first else {
+        var temps: [URL] = []
+        let stagedURL: URL
+        if let name = filter.ciFilter {
+            guard let staged = renderFiltered(source, ciFilterName: name) else {
+                return false
+            }
+            temps.append(staged)
+            stagedURL = staged
+        } else {
+            stagedURL = source
+        }
+        defer {
+            for u in temps {
+                try? FileManager.default.removeItem(at: u)
+            }
+        }
+
+        // 组 composition
+        let asset = AVURLAsset(url: stagedURL)
+        guard let srcVideo = asset.tracks(withMediaType: .video).first else {
             return false
         }
         let comp = AVMutableComposition()
         guard let vTrack = comp.addMutableTrack(
             withMediaType: .video,
             preferredTrackID: kCMPersistentTrackID_Invalid,
-            from: avAsset,
+            from: asset,
             at: .zero
         ) else {
             return false
         }
-        let videoRange = assetVideo.timeRange
-        vTrack.insertTimeRange(videoRange, of: assetVideo, at: .zero, error: nil)
+        vTrack.insertTimeRange(srcVideo.timeRange, of: srcVideo, at: .zero, error: nil)
+        vTrack.setSpeed(speed, atStart: .zero)
 
         if !muted,
-           let aSrc = avAsset.tracks(withMediaType: .audio).first,
+           let srcAudio = asset.tracks(withMediaType: .audio).first,
            let aTrack = comp.addMutableTrack(
                 withMediaType: .audio,
                 preferredTrackID: kCMPersistentTrackID_Invalid,
-                from: avAsset,
+                from: asset,
                 at: .zero
            ) {
-            aTrack.insertTimeRange(aSrc.timeRange, of: aSrc, at: .zero, error: nil)
+            aTrack.insertTimeRange(srcAudio.timeRange, of: srcAudio, at: .zero, error: nil)
+            aTrack.setSpeed(speed, atStart: .zero)
         }
 
-        var videoComp: AVVideoComposition?
-        if let ciName = filter.ciFilter {
-            let size = renderSize(assetVideo: assetVideo)
-            let vc = AVMutableVideoComposition()
-            vc.renderSize = size
-            vc.renderingTime = videoRange
-            vc.frameDuration = CMTime(value: 1, timescale: 30)
-            let gen = FilterFrameGenerator(asset: comp, sourceTrack: assetVideo, ciFilterName: ciName)
-            gen.maxCancellableRequests = 1
-            vc.frameGenerator = AVAsynchronousVideoCompositionRequestGenerator(delegate: gen)
-            videoComp = vc
-        }
+        // 变速后合成时间 ≠ 源时间，必须显式声明映射关系
+        let size = renderSize(assetVideo: srcVideo)
+        let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: vTrack)
+        layer.setTransform(CGAffineTransform.identity, at: .zero)
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = vTrack.timeRange
+        instruction.layerInstructions = [layer]
 
+        let composition = AVMutableVideoComposition()
+        composition.renderSize = size
+        composition.customCompositionTimeAssociation = .relativeToEachTrack
+        composition.instructions = [instruction]
+
+        // 导出
         let docs = FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask).first!
         let dir = docs.appendingPathComponent("Media", isDirectory: true)
@@ -61,96 +83,146 @@ enum VideoExporter {
         session.outputURL = outURL
         session.outputFileType = .mp4
         session.shouldOptimizeForNetworkUse = true
-        if let vc = videoComp {
-            session.videoComposition = vc
+        session.videoComposition = composition
+        session.progressHandler = { p in
+            let v = Double(p)
+            DispatchQueue.main.async { progress(v) }
         }
-        session.exportAsynchronously { status in
-            if status == .completed {
-                progress(1.0)
-                _ = PHPhotoLibrary.shared().performChanges {
-                    PHAssetChangeRequest.creationRequestForAsset(from: outURL)
-                }
+
+        progress(0.05)
+        let completed = await withCheckedContinuation { continuation in
+            session.exportAsynchronously { status in
+                DispatchQueue.main.async { progress(1.0) }
+                continuation.resume(returning: status == .completed)
             }
         }
-        return session.status != .cancelled
+
+        guard completed else { return false }
+        _ = PHPhotoLibrary.shared().performChanges {
+            PHAssetChangeRequest.creationRequestForAsset(from: outURL)
+        }
+        return true
     }
 
     private static func renderSize(assetVideo: AVAssetTrack) -> CGSize {
         var size = assetVideo.naturalSize
         size = size.applying(assetVideo.transform)
-        size = CGSize(width: size.width.rounded(.down) / 2 * 2, height: size.height.rounded(.down) / 2 * 2)
-        return size
+        return CGSize(
+            width: size.width.rounded(.down) / 2 * 2,
+            height: size.height.rounded(.down) / 2 * 2
+        )
     }
 
-    // MARK: - 滤镜帧生成器（逐帧解码 + CIFilter）
+    // MARK: - 滤镜离线渲染（顺序读写，不做随机 seek）
 
-    final class FilterFrameGenerator: NSObject, AVAsynchronousVideoCompositionRequestDelegate {
-        private let asset: AVMutableComposition
-        private let sourceTrack: AVAssetTrack
-        private let ciFilterName: String
-        private let ciContext = CIContext()
+    private static func renderFiltered(_ source: URL, ciFilterName: String) -> URL? {
+        let asset = AVURLAsset(url: source)
+        guard let track = asset.tracks(withMediaType: .video).first else { return nil }
 
-        init(asset: AVMutableComposition, sourceTrack: AVAssetTrack, ciFilterName: String) {
-            self.asset = asset
-            self.sourceTrack = sourceTrack
-            self.ciFilterName = ciFilterName
-        }
+        var size = track.naturalSize
+        size = size.applying(track.transform)
+        let w = Int(size.width.rounded(.down) / 2 * 2)
+        let h = Int(size.height.rounded(.down) / 2 * 2)
+        guard w > 0, h > 0 else { return nil }
 
-        func processVideoCompositionRequest(_ request: AVAsynchronousVideoCompositionRequest) {
-            do {
-                let reqSize = request.renderSize
-                let frameTime = request.sourceTime.seconds
+        guard let reader = try? AVAssetReader(asset: asset) else { return nil }
+        let trackInput = AVAssetReaderTrackInput(track: track, outputSettings: nil)
+        guard reader.canAdd(trackInput) else { return nil }
+        reader.add(trackInput)
 
-                // 建一次性 reader 解码到目标时间
-                let reader = try AVAssetReader(asset: asset)
-                let input = AVAssetReaderTrackInput(track: sourceTrack, outputSettings: nil)
-                guard reader.canAdd(input) else {
-                    request.finish(with: nil, error: nil)
-                    return
+        let outURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vedit_filter_\(Int(Date().timeIntervalSince1970)).mp4")
+        guard let writer = try? AVAssetWriter(outputURL: outURL, fileType: .mp4) else { return nil }
+
+        let settings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: w,
+            AVVideoHeightKey: h
+        ]
+        let writerInput = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
+        writerInput.expectsMediaDataInRealtime = false
+        guard writer.canInput(writerInput) else { return nil }
+        writer.add(writerInput)
+
+        let poolAttrs: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
+            kCVPixelBufferWidthKey as String: w,
+            kCVPixelBufferHeightKey as String: h
+        ]
+        guard let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+            assetWriterInput: writerInput,
+            sourcePixelBufferAttributes: poolAttrs
+        ) else { return nil }
+
+        let finished = DispatchSemaphore(value: 0)
+        writer.addFinishedWritingCallback { _ in finished.signal() }
+        writer.startWriting()
+        writer.startSession(atSourceTime: .zero)
+        reader.startReading()
+
+        let ciContext = CIContext()
+        let filter = CIFilter(name: ciFilterName)
+        let rect = CGRect(x: 0, y: 0, width: w, height: h)
+
+        while reader.status == .reading {
+            waitReady(writerInput)
+            guard let sample = trackInput.readSampleBuffer() else { break }
+            let pts = CMSampleBufferGetPresentationTimeStamp(sample)
+
+            var image: CGImage?
+            if let pb = CVPixelBufferGetPixelBufferFromSampleBuffer(sample) {
+                var ci = CIImage(cvPixelBuffer: pb)
+                if let filter {
+                    filter.setValue(ci, forKey: kCIInputImageKey)
+                    if let out = filter.outputImage { ci = out }
                 }
-                reader.add(input)
-                guard reader.startReading() else {
-                    request.finish(with: nil, error: nil)
-                    return
-                }
+                ci = ci.scaled(toFit: rect).cropped(to: rect)
+                image = ciContext.createCGImage(ci, from: rect)
+            }
 
-                var baseImage: CGImage?
-                while reader.status == .reading {
-                    guard let sample = input.readSampleBuffer() else { break }
-                    let t = CMSampleBufferGetPresentationTimeStamp(sample).seconds
-                    if t >= frameTime {
-                        if let pb = CVPixelBufferGetPixelBufferFromSampleBuffer(sample) {
-                            let ciImg = CIImage(cvPixelBuffer: pb)
-                            let scaled = ciImg
-                                .transformed(by: CGAffineTransform(
-                                    scale: reqSize.width / Double(ciImg.extent.width),
-                                    y: reqSize.height / Double(ciImg.extent.height)
-                                ))
-                                .cropped(to: CGRect(origin: .zero, size: reqSize))
-                            var out = scaled
-                            if let f = CIFilter(name: ciFilterName) {
-                                f.setValue(scaled, forKey: kCIInputImageKey)
-                                if let filtered = f.outputImage {
-                                    out = filtered
-                                }
-                            }
-                            if let cgImg = try? ciContext.createCGImage(out, from: CGRect(origin: .zero, size: reqSize)) {
-                                baseImage = cgImg
-                            }
-                        }
-                        break
-                    }
+            if let cg = image,
+               let pixel = makePixelBuffer(adaptor: adaptor),
+               let base = CVPixelBufferGetBaseAddress(pixel) {
+                CVPixelBufferLockBaseAddress(pixel, [])
+                if let ctx = CGContext(
+                    data: base, width: w, height: h,
+                    bitsPerComponent: 8, bytesPerRow: Int(CVPixelBufferGetBytesPerRow(pixel)),
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                ) {
+                    ctx.draw(cg, in: rect)
                 }
-                if let img = baseImage {
-                    request.finish(with: img)
-                } else {
-                    request.finish(with: nil, error: nil)
-                }
-            } catch {
-                request.finish(with: nil, error: error)
+                CVPixelBufferUnlockBaseAddress(pixel, [])
+                adaptor.append(pixel, withPresentationTime: pts)
+            } else {
+                writerInput.append(sample, withPresentationTime: pts)
             }
         }
 
-        func cancelVideoCompositionRequest(_ request: AVAsynchronousVideoCompositionRequest) {}
+        adaptor.markAsFinished()
+        writer.finishWriting()
+        _ = finished.wait(timeout: .now() + 120)
+
+        guard writer.status == .completed,
+              FileManager.default.fileExists(atPath: outURL.path) else {
+            NSLog("vedit 滤镜渲染失败: \(writer.error?.localizedDescription ?? "未知")")
+            return nil
+        }
+        return outURL
+    }
+
+    private static func makePixelBuffer(adaptor: AVAssetWriterInputPixelBufferAdaptor) -> CVPixelBuffer? {
+        guard let pool = adaptor.pixelBufferPool else { return nil }
+        var buffer: CVPixelBuffer?
+        CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
+        return buffer
+    }
+
+    private static func waitReady(_ input: AVAssetWriterInput, tries: Int = 500) {
+        var i = 0
+        while !input.isReadyForMoreMediaData, i < tries {
+            i += 1
+            usleep(20_000)
+        }
     }
 }
