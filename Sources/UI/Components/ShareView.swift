@@ -21,19 +21,20 @@ struct ShareView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 300)
             } else {
-                ShareViewContent(items: items)
+                ShareActivityView(activityItems: items)
             }
         }
         .presentationDetents([.medium, .large])
     }
 }
 
-struct ShareViewContent: UIViewControllerRepresentable {
-    let items: [Any]
+struct ShareActivityView: UIViewControllerRepresentable {
+    let activityItems: [Any]
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
     }
 
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: _ Context) {}
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {
+    }
 }
