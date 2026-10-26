@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>zh-Hans</string>
+	<key>CFBundleDisplayName</key>
+	<string>光圈Pro</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.aperture.pro</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>20261026.01</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>光圈Pro 需要使用相机来拍照和录像</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>光圈Pro 需要使用麦克风来录制视频声音</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>光圈Pro 需要访问相册来保存照片和视频</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>光圈Pro 需要访问相册来选择和编辑照片</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>光圈Pro 需要在局域网中共享相机画面（IP推流）</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_aperturepro._tcp</string>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>fetch</string>
+	</array>
+	<key>NSUbiquitousContainers</key>
+	<dict>
+		<key>$(CONTAINER_IDENTIFIER)_Documents</key>
+		<dict>
+			<key>NSUbiquitousContainerIsolationDomain</key>
+			<string>NSUbiquitousContainerIsolationDomainiCloud</string>
+			<key>NSUbiquitousContainerName</key>
+			<string>光圈Pro</string>
+			<key>NSUbiquitousContainerMaximumSyncableItems</key>
+			<integer>1000</integer>
+		</dict>
+	</dict>
+	<key>UIUserInterfaceStyle</key>
+	<string>Automatic</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>aperturepro</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
