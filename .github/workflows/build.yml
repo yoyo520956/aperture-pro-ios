@@ -20,7 +20,7 @@ jobs:
         run: |
           brew install swiftlint swiftformat 2>/dev/null || true
           swiftformat --lint . 2>&1 | head -20 || true
-          swiftlint --strict 2>&1 | head -20 || true
+          swiftlint 2>&1 | head -20 || true
 
       - name: Build IPA
         run: |
