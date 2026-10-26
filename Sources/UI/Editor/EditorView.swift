@@ -141,6 +141,6 @@ struct PhotoPickerView: View {
         }
         .padding()
         .presentationDetents([.medium])
-        .presentationBackgroundInteraction(.enabled(upTo: .medium))
+        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
     }
 }
