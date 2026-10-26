@@ -450,12 +450,18 @@ struct CameraPage: View {
 
     private static let streamCI = CIContext()
     private static let streamQueue = DispatchQueue(label: "camera.ipstream")
-    @State private var lastStreamPush: Double = 0
+    private static let throttleLock = NSLock()
+    private static var lastStreamPush: Double = 0
 
     private func pushStreamFrame(_ sample: CMSampleBuffer) {
         let now = CACurrentMediaTime()
-        guard now - lastStreamPush > 0.08 else { return }
-        lastStreamPush = now
+        Self.throttleLock.lock()
+        let last = Self.lastStreamPush
+        Self.throttleLock.unlock()
+        guard now - last > 0.08 else { return }
+        Self.throttleLock.lock()
+        Self.lastStreamPush = now
+        Self.throttleLock.unlock()
         guard let pb = CVPixelBufferGetPixelBufferFromSampleBuffer(sample) else { return }
         Self.streamQueue.async {
             let ci = CIImage(cvPixelBuffer: pb)
