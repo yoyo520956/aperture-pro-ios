@@ -6,37 +6,17 @@ class QRScanner: ObservableObject {
     @Published var isScanning: Bool = false
 
     func scan(from image: UIImage) {
-        guard let requestHandler = VNImageRequestHandler(image: image) else { return }
-        let request = VNBarcodeObservingRequest()
+        let handler = VNImageRequestHandler(cgImage: image.cgImage!)
+        let request = VNBarcodeRequest()
         request.recognitionLevel = .accurate
-        request.symbologies = [.qr, .ean13, .ean8, .code128, .pdf417, .aztec, .dataMatrix]
-
         do {
-            try requestHandler.perform([request])
-            if let barcode = request.results?.first?.payload {
-                scanResult = barcode
+            try handler.perform([request])
+            if let observations = request.results, let first = observations.first {
+                scanResult = first.payloadStringValue
                 isScanning = false
             }
         } catch {
             print("QR 扫描失败: \(error)")
-        }
-    }
-
-    func scanVideoFrame(_ pixelBuffer: CVPixelBuffer) {
-        guard isScanning else { return }
-        let requestHandler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up)
-        let request = VNBarcodeObservingRequest()
-        request.recognitionLevel = .fast
-        request.symbologies = [.qr]
-
-        do {
-            try requestHandler.perform([request])
-            if let barcode = request.results?.first?.payload {
-                scanResult = barcode
-                isScanning = false
-            }
-        } catch {
-            // 静默处理视频帧错误
         }
     }
 
@@ -47,7 +27,7 @@ class QRScanner: ObservableObject {
 }
 
 struct QRScannerView: View {
-    @StateObject var scanner: QRScanner
+    @StateObject var scanner = QRScanner()
     @State private var showResult: Bool = false
 
     var body: some View {
@@ -56,7 +36,6 @@ struct QRScannerView: View {
                 RoundedRectangle(cornerRadius: 16)
                     .fill(Color.black.opacity(0.6))
                     .frame(width: 240, height: 240)
-
                 VStack(spacing: 8) {
                     Image(systemName: "qrcode.viewfinder")
                         .font(.system(size: 48))
@@ -76,13 +55,11 @@ struct QRScannerView: View {
                         .textSelection(.enabled)
                         .lineLimit(2)
                         .truncationMode(.middle)
-
                     HStack(spacing: 12) {
                         Button("复制") {
                             UIPasteboard.general.string = result
                         }
                         .buttonStyle(.bordered)
-
                         Button("关闭") {
                             scanner.reset()
                             showResult = false
