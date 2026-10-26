@@ -26,7 +26,7 @@ jobs:
             build \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            2>&1 | tail -50
+            2>&1 | tail -80
 
       - name: Archive
         run: |
@@ -37,7 +37,7 @@ jobs:
             archive \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            2>&1 | tail -50
+            2>&1 | tail -80
 
       - name: Export Unsigned IPA
         run: |
@@ -47,6 +47,9 @@ jobs:
             cp -r AperturePro.app Payload/
             zip -r /workspace/AperturePro-unsigned.ipa Payload/
             echo "✅ IPA exported: $(ls -lh /workspace/AperturePro-unsigned.ipa)"
+            ls Payload/AperturePro.app 2>/dev/null | head -20
+            echo "=== 内嵌扩展 ==="
+            ls Payload/AperturePro.app/PlugIns 2>/dev/null || echo "无 PlugIns（正常：扩展嵌入方式可能不同）"
           else
             echo "⚠️ 未找到 archive，检查编译日志"
             exit 1
@@ -60,16 +63,23 @@ jobs:
 
       - name: Verify Binary
         run: |
-          echo "=== 二进制核验 ==="
-          BINARY=$(find build -name "AperturePro" -type f 2>/dev/null | head -1)
+          echo "=== 二进制核验（UTF-8 字节直扫）==="
+          BINARY=$(find build -name "AperturePro" -type f -path "*Products*" 2>/dev/null | head -1)
+          if [ -z "$BINARY" ]; then BINARY=$(find build -name "AperturePro" -type f 2>/dev/null | head -1); fi
           if [ -n "$BINARY" ]; then
             echo "Binary: $BINARY ($(wc -c < "$BINARY") bytes)"
-            python3 -c "
-          import subprocess
-          r = subprocess.run(['strings', '-a', '$BINARY'], capture_output=True, text=True)
-          checks = ['光圈', '拍照', '录像', '滤镜', '相机', '频闪', 'AR']
-          for c in checks:
-              count = r.stdout.count(c)
-              print(f'  {c}: {count}')
-          "
+            python3 - "$BINARY" <<'PY'
+import sys
+b = open(sys.argv[1], "rb").read()
+checks = ["光圈", "系统相册", "文档扫描", "慢动作", "夜景", "拼长图", "白平衡", "iCloud", "Live", "全景"]
+for c in checks:
+    print(f"  {c}: {b.count(c.encode('utf-8'))}")
+PY
           fi
+          echo "=== 版本核验 ==="
+          python3 - <<'PY'
+import plistlib, glob
+for p in glob.glob("build/AperturePro.xcarchive/Products/*App/Info.plist"):
+    d = plistlib.load(open(p, "rb"))
+    print("  ", d.get("CFBundleShortVersionString"), d.get("CFBundleVersion"))
+PY

@@ -9,6 +9,7 @@ struct ApertureProApp: App {
             ContentView()
                 .environmentObject(appState)
                 .preferredColorScheme(appState.colorScheme)
+                .tint(Color(CNTheme.indigo))
                 .statusBarHidden(false)
         }
     }

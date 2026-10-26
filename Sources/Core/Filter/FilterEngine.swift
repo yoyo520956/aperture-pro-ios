@@ -106,3 +106,53 @@ class FilterEngine: ObservableObject {
         return filter.outputImage
     }
 }
+
+extension FilterEngine {
+    /// 滤镜直接作用于 CIImage（编辑管线用）
+    func renderPreset(_ image: CIImage, preset: FilterPreset) -> CIImage {
+        switch preset {
+        case .original:
+            return image
+        case .vintage:
+            guard let f = CIFilter(name: "CIVignette") else { return image }
+            f.setValue(image, forKey: kCIInputImageKey)
+            f.setValue(1.2, forKey: "intensity")
+            f.setValue(180.0, forKey: "radius")
+            return f.outputImage ?? image
+        case .blackWhite:
+            guard let f = CIFilter(name: "CIPhotoEffectNoir") else { return image }
+            f.setValue(image, forKey: kCIInputImageKey)
+            return f.outputImage ?? image
+        case .sepia:
+            guard let f = CIFilter(name: "CISepiaTone") else { return image }
+            f.setValue(image, forKey: kCIInputImageKey)
+            f.setValue(1.0, forKey: "intensity")
+            return f.outputImage ?? image
+        case .cool:
+            guard let f = CIFilter(name: "CIColorControls") else { return image }
+            f.setValue(image, forKey: kCIInputImageKey)
+            f.setValue(1.1, forKey: "saturation")
+            f.setValue(1.05, forKey: "contrast")
+            return f.outputImage ?? image
+        case .warm:
+            guard let f = CIFilter(name: "CIColorControls") else { return image }
+            f.setValue(image, forKey: kCIInputImageKey)
+            f.setValue(1.15, forKey: "saturation")
+            f.setValue(0.05, forKey: "brightness")
+            return f.outputImage ?? image
+        case .dramatic:
+            guard let f = CIFilter(name: "CIColorControls") else { return image }
+            f.setValue(image, forKey: kCIInputImageKey)
+            f.setValue(1.2, forKey: "saturation")
+            f.setValue(1.3, forKey: "contrast")
+            f.setValue(0.05, forKey: "brightness")
+            return f.outputImage ?? image
+        case .film:
+            guard let f = CIFilter(name: "CIVignette") else { return image }
+            f.setValue(image, forKey: kCIInputImageKey)
+            f.setValue(0.8, forKey: "intensity")
+            f.setValue(250.0, forKey: "radius")
+            return f.outputImage ?? image
+        }
+    }
+}

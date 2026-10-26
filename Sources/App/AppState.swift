@@ -6,14 +6,6 @@ class AppState: ObservableObject {
     @Published var colorScheme: ColorScheme?
     @Published var isCapturing: Bool = false
     @Published var lastCapturedMedia: MediaItem?
-
-    var colorScheme: ColorScheme? {
-        didSet {
-            if colorScheme == nil {
-                // 跟随系统
-            }
-        }
-    }
 }
 
 enum MainTab: Int, CaseIterable {
