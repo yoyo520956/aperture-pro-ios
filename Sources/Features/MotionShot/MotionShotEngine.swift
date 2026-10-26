@@ -29,11 +29,14 @@ class MotionShotEngine: ObservableObject {
     }
 
     private func composeFrames() -> UIImage? {
-        guard let first = capturedFrames.first,
-              let ciImages = capturedFrames.compactMap({ CIImage(image: $0) })
-        else { return nil }
+        var ciImages: [CIImage] = []
+        for frame in capturedFrames {
+            if let ci = CIImage(image: frame) {
+                ciImages.append(ci)
+            }
+        }
+        guard !ciImages.isEmpty else { return nil }
 
-        // 叠加所有帧
         var result = ciImages[0]
         for i in stride(from: 1, to: ciImages.count, by: 1) {
             let filter = CIFilter.blendWithMask()
