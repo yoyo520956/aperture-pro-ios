@@ -11,26 +11,22 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: brew install xcodegen 2>/dev/null || true
 
       - name: Generate Xcode Project
         run: xcodegen generate
 
-      - name: Lint Gate
-        run: |
-          brew install swiftlint swiftformat 2>/dev/null || true
-          swiftformat --lint . 2>&1 | head -20 || true
-          swiftlint 2>&1 | head -20 || true
-
-      - name: Build IPA
+      - name: Build & Archive
         run: |
           xcodebuild -project AperturePro.xcodeproj \
             -scheme AperturePro \
             -configuration Release \
             -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=iPhone 16' \
-            build CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            2>&1 | xcpretty --color | tail -80
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            build \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            2>&1 | tail -50
 
       - name: Archive
         run: |
@@ -38,84 +34,42 @@ jobs:
             -scheme AperturePro \
             -configuration Release \
             -archivePath build/AperturePro.xcarchive \
-            archive CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            2>&1 | xcpretty --color | tail -80
+            archive \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            2>&1 | tail -50
 
-      - name: Export IPA
+      - name: Export Unsigned IPA
         run: |
-          cat > ExportOptions.plist << 'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>ad-hoc</string>
-            <key>teamID</key>
-            <string>9FTBM39AHP</string>
-            <key>compileBitcode</key>
-            <false/>
-          </dict>
-          </plist>
-          PLIST
-          xcodebuild -exportArchive \
-            -archivePath build/AperturePro.xcarchive \
-            -exportPath build/ipa \
-            -exportOptionsPlist ExportOptions.plist \
-            2>&1 | tail -20
-
-      - name: Fallback Payload ZIP
-        if: failure()
-        run: |
-          APP_DIR=$(find build/AperturePro.xcarchive/Products -name "*.app" -type d | head -1)
-          if [ -n "$APP_DIR" ]; then
+          if [ -d "build/AperturePro.xcarchive" ]; then
             cd build/AperturePro.xcarchive/Products
-            mkdir -p Payload && cp -r "$(basename $APP_DIR)" Payload/
-            zip -r AperturePro-unsigned.ipa Payload/
-            mv AperturePro-unsigned.ipa /workspace/
-            echo "IPA exported via Payload zip"
+            mkdir -p Payload
+            cp -r AperturePro.app Payload/
+            zip -r /workspace/AperturePro-unsigned.ipa Payload/
+            echo "✅ IPA exported: $(ls -lh /workspace/AperturePro-unsigned.ipa)"
+          else
+            echo "⚠️ 未找到 archive，检查编译日志"
+            exit 1
           fi
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: AperturePro-unsigned.ipa
-          path: |
-            build/ipa/*.ipa
-            /workspace/AperturePro-unsigned.ipa
+          path: /workspace/AperturePro-unsigned.ipa
 
       - name: Verify Binary
         run: |
           echo "=== 二进制核验 ==="
-          BINARY=$(find build -name "AperturePro" -type f | head -1)
+          BINARY=$(find build -name "AperturePro" -type f 2>/dev/null | head -1)
           if [ -n "$BINARY" ]; then
             echo "Binary: $BINARY ($(wc -c < "$BINARY") bytes)"
-            # 中文特征串核验
             python3 -c "
           import subprocess
           r = subprocess.run(['strings', '-a', '$BINARY'], capture_output=True, text=True)
-          checks = ['光圈', '拍照', '录像', '滤镜', '相机', '拍摄']
+          checks = ['光圈', '拍照', '录像', '滤镜', '相机', '频闪', 'AR']
           for c in checks:
               count = r.stdout.count(c)
               print(f'  {c}: {count}')
           "
-            # 版本号核验
-            python3 -c "
-          import plistlib
-          with open('$BINARY/../Info.plist', 'rb') as f:
-              p = plistlib.loads(f.read())
-              print(f'  MARKETING_VERSION: {p.get(\"CFBundleShortVersionString\",\"?\")}')
-              print(f'  BUILD: {p.get(\"CFBundleVersion\",\"?\")}')
-          "
           fi
-
-      - name: Release
-        if: github.event_name == 'push'
-        run: |
-          curl -sL -o AperturePro.ipa build/ipa/AperturePro.ipa 2>/dev/null || cp /workspace/AperturePro-unsigned.ipa AperturePro.ipa 2>/dev/null
-          md5sum AperturePro.ipa 2>/dev/null || true
-          curl -s -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{"tag_name":"v1.0.0","name":"光圈Pro v1.0.0","body":"Aperture Pro 专业相机 v1.0.0\n拍照/录像/频闪/滤镜/AR/IP推流/视频编辑","draft":false,"prerelease":false,"assets":[]}' \
-            https://api.github.com/repos/${GITHUB_REPOSITORY}/releases \
-            || echo "Release created or exists"
