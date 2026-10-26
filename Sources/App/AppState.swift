@@ -3,7 +3,7 @@ import SwiftUI
 @MainActor
 class AppState: ObservableObject {
     @Published var currentTab: MainTab = .camera
-    @Published var colorScheme: ColorScheme? = nil
+    @Published var colorScheme: ColorScheme?
     @Published var isCapturing: Bool = false
     @Published var lastCapturedMedia: MediaItem?
 
