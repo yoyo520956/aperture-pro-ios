@@ -75,13 +75,10 @@ private func ingestBestEffort() {
             NSLog("[Share] 扩展容器内无共享图片，跳过入库")
             return
         }
-        // 变更请求必须在 performChanges 块内执行；用最稳的 creationRequestForAsset(from: URL) 范式
-        let tmp = FileManager.default.temporaryDirectory
+        // 与主 App PHLibraryService 同款调用（已验证可编译）：Data → 相册
         PHPhotoLibrary.shared().performChanges {
-            for (i, data) in photos.enumerated() {
-                let url = tmp.appendingPathComponent("share_ingest_\(i).jpg")
-                guard (try? data.write(to: url)) != nil else { continue }
-                _ = PHAssetCreationRequest.creationRequestForAsset(atFileURL: url)
+            for data in photos {
+                _ = PHAssetChangeRequest.creationRequestForAsset(from: data)
             }
         }
         PHPhotoLibrary.shared().synchronizeChanges()
