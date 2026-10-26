@@ -10,7 +10,7 @@ struct CameraPreview: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ uiView: CameraPreviewView, context: Context) {
+    func updateUIView(_ uiView: CameraPreviewView, context: _ Context) {
         if engine.isRunning {
             if let layer = uiView.previewLayer {
                 layer.session = engine.session
