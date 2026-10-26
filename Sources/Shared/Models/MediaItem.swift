@@ -18,7 +18,17 @@ struct MediaItem: Identifiable, Codable, Equatable {
     var isFavorite: Bool
     var filterName: String?
 
-    init(kind: MediaItem.MediaKind = .photo, filename: String, date: Date = .now, duration: Double? = nil, width: Int = 0, height: Int = 0, fileSize: Int64 = 0, isFavorite: Bool = false, filterName: String? = nil) {
+    init(
+        kind: MediaKind = .photo,
+        filename: String,
+        date: Date = Date(),
+        duration: Double? = nil,
+        width: Int = 0,
+        height: Int = 0,
+        fileSize: Int64 = 0,
+        isFavorite: Bool = false,
+        filterName: String? = nil
+    ) {
         self.id = UUID()
         self.kind = kind
         self.filename = filename
