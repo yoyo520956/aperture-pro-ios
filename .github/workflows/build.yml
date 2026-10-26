@@ -1,8 +1,12 @@
-name: iOS Build
+name: Build IPA
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -11,31 +15,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install XcodeGen
-        run: brew install xcodegen 2>/dev/null || true
+        run: brew install xcodegen
 
       - name: Generate Xcode Project
         run: xcodegen generate
-
-      - name: Build & Archive
-        id: build
-        run: |
-          mkdir -p logs
-          xcodebuild -project AperturePro.xcodeproj \
-            -scheme AperturePro \
-            -configuration Release \
-            -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=iPhone 15' \
-            build \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            > logs/sim_build.log 2>&1
-          RC=$?
-          echo "=== 模拟器构建 RC=$RC（完整日志见上传的 build-logs）==="
-          echo "--- 错误行（最多 60 条）---"
-          grep -E "error:" logs/sim_build.log | head -60 || true
-          echo "--- 结尾 25 行 ---"
-          tail -25 logs/sim_build.log
-          exit $RC
 
       - name: Archive
         run: |
@@ -43,39 +26,55 @@ jobs:
           xcodebuild -project AperturePro.xcodeproj \
             -scheme AperturePro \
             -configuration Release \
+            -destination 'generic/platform=iOS' \
             -archivePath build/AperturePro.xcarchive \
             archive \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             > logs/archive.log 2>&1
           RC=$?
-          echo "=== Archive RC=$RC（完整日志见上传的 build-logs）==="
+          echo "=== archive RC=$RC ==="
           echo "--- 错误行（最多 60 条）---"
           grep -E "error:" logs/archive.log | head -60 || true
           echo "--- 结尾 25 行 ---"
           tail -25 logs/archive.log
           exit $RC
 
-      - name: Export Unsigned IPA
+      - name: Export IPA
         run: |
-          if [ -d "build/AperturePro.xcarchive" ]; then
-            cd build/AperturePro.xcarchive/Products
-            mkdir -p Payload
-            cp -r AperturePro.app Payload/
-            zip -r /workspace/AperturePro-unsigned.ipa Payload/
-            echo "✅ IPA exported: $(ls -lh /workspace/AperturePro-unsigned.ipa)"
-            echo "=== 内嵌扩展 ==="
-            ls Payload/AperturePro.app/PlugIns 2>/dev/null || echo "无 PlugIns 目录"
+          mkdir -p build/ipa
+          xcodebuild -exportArchive \
+            -archivePath build/AperturePro.xcarchive \
+            -exportPath build/ipa \
+            -exportOptionsPlist export.plist \
+            > logs/export.log 2>&1 || true
+          if ls build/ipa/*.ipa >/dev/null 2>&1; then
+            echo "export ok"
           else
-            echo "⚠️ 未找到 archive，检查编译日志"
-            exit 1
+            echo "export failed, fallback to Payload zip"
+            mkdir -p build/ipa/Payload
+            cp -R build/AperturePro.xcarchive/Products/Applications/*.app build/ipa/Payload/
+            (cd build/ipa && zip -qry AperturePro-unsigned.ipa Payload)
           fi
+          ls -la build/ipa/
 
-      - name: Upload IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: AperturePro-unsigned.ipa
-          path: /workspace/AperturePro-unsigned.ipa
+      - name: Verify Binary
+        run: |
+          mkdir -p verify
+          APP=$(find build/AperturePro.xcarchive/Products/Applications -name '*.app' -maxdepth 1 | head -1)
+          BIN=$(find "$APP" -type f -perm +111 -name 'AperturePro' | head -1)
+          cp "$BIN" verify/AperturePro
+          python3 -c "
+          import plistlib, sys, pathlib
+          app = pathlib.Path('''$APP''')
+          info = plistlib.loads((app / 'Info.plist').read_bytes())
+          print('bundle:', info.get('CFBundleIdentifier'))
+          print('version:', info.get('CFBundleShortVersionString'), info.get('CFBundleVersion'))
+          data = pathlib.Path('verify/AperturePro').read_bytes()
+          for s in ['光圈专业版','胶片模拟','延时摄影','全景拼接']:
+              b = s.encode('utf-8')
+              print(('OK  ' if b in data else 'MISS'), s)
+          "
 
       - name: Upload Build Logs
         if: always()
@@ -85,14 +84,9 @@ jobs:
           path: logs/
           if-no-files-found: ignore
 
-      - name: Verify Binary
-        run: |
-          echo "=== 二进制核验（UTF-8 字节直扫）==="
-          BINARY=$(find build -name "AperturePro" -type f -path "*Products*" 2>/dev/null | head -1)
-          if [ -z "$BINARY" ]; then BINARY=$(find build -name "AperturePro" -type f 2>/dev/null | head -1); fi
-          if [ -n "$BINARY" ]; then
-            echo "Binary: $BINARY ($(wc -c < "$BINARY") bytes)"
-            python3 -c "import sys; b=open(sys.argv[1],'rb').read(); [print(' ', c, b.count(c.encode('utf-8'))) for c in ['光圈','系统相册','文档扫描','慢动作','夜景','拼长图','白平衡','iCloud','全景','延时']]" "$BINARY"
-          fi
-          echo "=== 版本核验 ==="
-          python3 -c "import plistlib, glob; [print(' ', p, plistlib.load(open(p,'rb')).get('CFBundleShortVersionString'), plistlib.load(open(p,'rb')).get('CFBundleVersion')) for p in glob.glob('build/AperturePro.xcarchive/Products/*App/Info.plist')]"
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AperturePro-IPA
+          path: build/ipa/*.ipa
+          if-no-files-found: ignore
