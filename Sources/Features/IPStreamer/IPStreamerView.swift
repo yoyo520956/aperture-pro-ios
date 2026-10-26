@@ -2,43 +2,30 @@ import SwiftUI
 
 struct IPStreamerView: View {
     @StateObject private var streamer = IPStreamerService()
-    @State private var showQRCode: Bool = false
 
     var body: some View {
         VStack(spacing: 16) {
             HStack(spacing: 12) {
-                Image(systemName: streamer.isStreaming ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash")
+                Image(systemName: streamer.isStreaming
+                      ? "antenna.radiowaves.left.and.right"
+                      : "antenna.radiowaves.left.and.right.slash")
                     .font(.system(size: 36))
                     .foregroundStyle(streamer.isStreaming ? .green : .gray)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("IP 推流")
                         .font(.headline)
-                    Text(streamer.isStreaming ? "\(streamer.clientCount) 个客户端已连接" : "未启动")
+                    Text(streamer.isStreaming ? "服务运行中" : "未启动")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-            }
-
-            if streamer.isStreaming {
-                HStack(spacing: 8) {
-                    ForEach(0..<5, id: \.self) { i in
-                        Circle()
-                            .fill(i < streamer.clientCount ? Color.green : Color.gray.opacity(0.3))
-                            .frame(width: 8, height: 8)
-                    }
-                }
-                .padding(.vertical, 8)
             }
 
             Button {
                 if streamer.isStreaming {
                     streamer.stop()
                 } else {
-                    streamer.start() { frame in
-                        // 实际项目中从 CameraEngine 获取帧
-                        print("Frame: \(frame.count) bytes")
-                    }
+                    streamer.start { _ in }
                 }
             } label: {
                 Label(
