@@ -18,51 +18,51 @@ class FilterEngine: ObservableObject {
         case .original:
             break
         case .vintage:
-            let c = CIFilter.vignette()
-            c.inputImage = output
-            c.intensity = 1.2
-            c.radius = 180
-            output = c.outputImage
+            let filter = CIFilter.vignette()
+            filter.inputImage = output
+            filter.intensity = 1.2
+            filter.radius = 180
+            output = filter.outputImage
         case .blackWhite:
-            let c = CIFilter.photoEffect()
-            c.inputImage = output
-            c.outputImage = output
+            let filter = CIFilter.photoEffect()
+            filter.inputImage = output
+            filter.outputImage = output
             let c2 = CIFilter.colorControls()
-            c2.inputImage = c.outputImage
-            c2.saturation = 0.0
-            output = c2.outputImage
+            filter.inputImage = filter.outputImage
+            filter.saturation = 0.0
+            output = filter.outputImage
         case .sepia:
-            let c = CIFilter.sepiaTone()
-            c.inputImage = output
-            c.intensity = 1.0
-            output = c.outputImage
+            let filter = CIFilter.sepiaTone()
+            filter.inputImage = output
+            filter.intensity = 1.0
+            output = filter.outputImage
         case .cool:
-            let c = CIFilter.colorControls()
-            c.inputImage = output
-            c.temperature = -0.3
-            c.tint = 10
-            c.saturation = 1.1
-            output = c.outputImage
+            let filter = CIFilter.colorControls()
+            filter.inputImage = output
+            filter.temperature = -0.3
+            filter.tint = 10
+            filter.saturation = 1.1
+            output = filter.outputImage
         case .warm:
-            let c = CIFilter.colorControls()
-            c.inputImage = output
-            c.temperature = 0.3
-            c.tint = 10
-            c.saturation = 1.1
-            output = c.outputImage
+            let filter = CIFilter.colorControls()
+            filter.inputImage = output
+            filter.temperature = 0.3
+            filter.tint = 10
+            filter.saturation = 1.1
+            output = filter.outputImage
         case .dramatic:
-            let c = CIFilter.colorControls()
-            c.inputImage = output
-            c.brightness = 0.1
-            c.contrast = 1.3
+            let filter = CIFilter.colorControls()
+            filter.inputImage = output
+            filter.brightness = 0.1
+            filter.contrast = 1.3
             c.saturation = 1.2
-            output = c.outputImage
+            output = filter.outputImage
         case .film:
-            let c = CIFilter.vignette()
-            c.inputImage = output
-            c.intensity = 0.8
-            c.radius = 250
-            output = c.outputImage
+            let filter = CIFilter.vignette()
+            filter.inputImage = output
+            filter.intensity = 0.8
+            filter.radius = 250
+            output = filter.outputImage
         }
 
         let render = ciContext.createCGImage(output, from: ciImage.extent)
