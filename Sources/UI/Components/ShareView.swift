@@ -35,5 +35,5 @@ struct ShareViewContent: UIViewControllerRepresentable {
         UIActivityViewController(activityItems: items, applicationActivities: nil)
     }
 
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: _ Context) {}
 }
