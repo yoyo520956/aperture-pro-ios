@@ -169,7 +169,7 @@ extension CameraEngine {
     struct VideoDataDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         let parent: CameraEngine
 
-        func videoDataOutput(_ output: AVCaptureVideoDataOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        func videoDataOutput(_ output: AVCaptureVideoDataOutput, didOutput sampleBuffer: CMSampleBuffer, from _ connection: AVCaptureConnection) {
             parent.videoDataCallback?(sampleBuffer)
         }
     }
@@ -192,7 +192,7 @@ extension CameraEngine {
             }
         }
 
-        func photoOutput(_ output: AVCapturePhotoOutput, didFinishCapturingPhotoInHighResolution photo: AVCapturePhoto, error: Error?) {
+        func photoOutput(_ output: AVCapturePhotoOutput, didFinishCapturingPhotoInHighResolution _ photo: AVCapturePhoto, error: Error?) {
         }
     }
 }
@@ -201,7 +201,7 @@ extension CameraEngine {
     struct MovieRecordingDelegate: NSObject, AVCaptureFileDataRecordingDelegate {
         let parent: CameraEngine
 
-        func fileOutput(_ output: AVCaptureFileDataOutput, didStartRecordingTo fileURL: URL, recordingTimeIn fileDuration: CMTime) {
+        func fileOutput(_ output: AVCaptureFileDataOutput, didStartRecordingTo fileURL: URL, recordingTimeIn _ fileDuration: CMTime) {
         }
 
         func fileOutput(_ output: AVCaptureFileDataOutput, didFinishRecordingTo fileURL: URL, from time: CMTime, error: Error?) {
