@@ -1,3 +1,4 @@
+import AVFoundation
 import Photos
 import UIKit
 import Foundation
@@ -19,10 +20,9 @@ enum PHLibraryService {
         var ok = false
         let sem = DispatchSemaphore(value: 1)
         PHPhotoLibrary.shared().performChanges {
-            guard let asset = PHAssetChangeRequest.creationRequestForAsset(from: data) as? PHAsset else {
-                return
-            }
-            _ = asset
+            // 官方范式：forAsset() + addResource(with:data:)
+            let request = PHAssetCreationRequest.forAsset()
+            request.addResource(with: .photo, data: data, options: nil)
         } completionHandler: { success in
             ok = success
             sem.signal()
@@ -35,7 +35,24 @@ enum PHLibraryService {
         var ok = false
         let sem = DispatchSemaphore(value: 1)
         PHPhotoLibrary.shared().performChanges {
-            PHAssetChangeRequest.creationRequestForAsset(from: url)
+            // 官方范式：forAsset() + addResource(with:fileURL:)
+            let request = PHAssetCreationRequest.forAsset()
+            request.addResource(with: .video, fileURL: url, options: nil)
+        } completionHandler: { success in
+            ok = success
+            sem.signal()
+        }
+        sem.wait()
+        return ok
+    }
+
+    static func saveLivePhoto(_ photoData: Data, videoURL: URL) -> Bool {
+        var ok = false
+        let sem = DispatchSemaphore(value: 1)
+        PHPhotoLibrary.shared().performChanges {
+            let request = PHAssetCreationRequest.forAsset()
+            request.addResource(with: .photo, data: photoData, options: nil)
+            request.addResource(with: .pairedVideo, fileURL: videoURL, options: nil)
         } completionHandler: { success in
             ok = success
             sem.signal()
@@ -110,25 +127,36 @@ enum PHLibraryService {
     }
 
     /// 视频导出到临时目录
+    /// 官方 API：requestExportSession(forVideo:options:exportPreset:resultHandler:)
+    /// 回调给的是 (AVAssetExportSession?, [AnyHashable: Any]?)
     static func exportVideo(_ assetID: String, completion: @escaping (URL?) -> Void) {
-        let options = PHFetchOptions()
         let result = PHAsset.fetchAssets(withLocalIdentifiers: [assetID], options: nil)
-        guard result.count > 0, let asset = result.firstObject else {
+        guard let asset = result.firstObject else {
             completion(nil)
             return
         }
-        let options2 = PHVideoExportSession(options: PHVideoExportPreset.muxFormatH264AVCProfileBaseline)
-        options2.outputFileType = .mpeg4
-        let session = PHVideoExportSession(asset: asset, options: options2)
         let outURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("ap_\(assetID).m4v")
-        session.outputFileURL = outURL
-        session.startExporting { status, _ in
-            DispatchQueue.main.async {
-                if status == .completed, FileManager.default.fileExists(atPath: outURL.path) {
-                    completion(outURL)
-                } else {
-                    completion(nil)
+        let options = PHVideoRequestOptions()
+        PHImageManager.default().requestExportSession(
+            forVideo: asset,
+            options: options,
+            exportPreset: AVAssetExportPresetPassthroughQuality
+        ) { session, info in
+            guard let session else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            session.outputURL = outURL
+            session.outputFileType = .mpeg4
+            try? FileManager.default.removeItem(at: outURL)
+            session.exportAsynchronously {
+                DispatchQueue.main.async {
+                    if session.status == .completed, FileManager.default.fileExists(atPath: outURL.path) {
+                        completion(outURL)
+                    } else {
+                        completion(nil)
+                    }
                 }
             }
         }

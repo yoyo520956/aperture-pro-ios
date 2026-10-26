@@ -114,6 +114,7 @@ targets:
                 - public.image
                 - public.movie
               NSExtensionServiceAllowsFinderLockedContent: true
+        NSPhotoLibraryAddUsageDescription: 光圈Pro 分享需要把您分享的图片和视频写入系统相册
     buildSettings:
       PRODUCT_BUNDLE_IDENTIFIER: com.aperture.pro.share
       MARKETING_VERSION: "1.2.0"

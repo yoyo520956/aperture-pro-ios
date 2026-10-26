@@ -99,7 +99,8 @@ enum VideoExporter {
 
         guard completed else { return false }
         _ = PHPhotoLibrary.shared().performChanges {
-            PHAssetChangeRequest.creationRequestForAsset(from: outURL)
+            let request = PHAssetCreationRequest.forAsset()
+            request.addResource(with: .video, fileURL: outURL, options: nil)
         }
         return true
     }
