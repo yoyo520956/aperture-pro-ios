@@ -32,6 +32,18 @@ struct VideoEditorView: View {
     @State private var exporting: Bool = false
     @State private var exportProgress: Double = 0
     @State private var message: String?
+    @State private var multiMode: Bool = false
+    @State private var segments: [SegRow] = []
+
+    struct SegRow: Identifiable {
+        let id = UUID()
+        var url: URL
+        var duration: Double
+        var start: Double = 0
+        var speed: Float = 1.0
+        var filter: VideoFilter = .none
+        var fade: Bool = false
+    }
 
     var body: some View {
         NavigationStack {
@@ -53,6 +65,9 @@ struct VideoEditorView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.top, 40)
+                }
+                if multiMode && !segments.isEmpty {
+                    multiList
                 }
                 if let message {
                     Label(message, systemImage: "checkmark.circle")
@@ -78,8 +93,21 @@ struct VideoEditorView: View {
             }
         }
         .toolbar {
-            if assetURL == nil {
-                PhotosPicker("选择视频", selection: $pickerItem, matching: .movie)
+            ToolbarItem(placement: .topBarTrailing) {
+                if assetURL != nil {
+                    Button(multiMode ? "单段" : "多段") {
+                        multiMode.toggle()
+                        if multiMode && segments.isEmpty {
+                            seedSegments()
+                        }
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                if assetURL == nil {
+                    PhotosPicker("选择视频", selection: $pickerItem, matching: .movie)
+                }
             }
         }
     }
@@ -137,17 +165,120 @@ struct VideoEditorView: View {
     // MARK: - 导出
 
     private func exportClip() {
-        guard let url = assetURL else { return }
         exporting = true
         exportProgress = 0
         Task {
-            let ok = await VideoExporter.export(
-                source: url, speed: speed, muted: muted, filter: filter
-            ) { p in
-                exportProgress = p
+            let ok: Bool
+            if multiMode && segments.count >= 2 {
+                let ms = segments.map { seg -> VideoExporter.MultiSegment in
+                    VideoExporter.MultiSegment(
+                        url: seg.url,
+                        start: seg.start,
+                        duration: seg.duration,
+                        speed: seg.speed,
+                        filter: seg.filter,
+                        mutedSegment: muted,
+                        fade: seg.fade
+                    )
+                }
+                ok = await VideoExporter.exportMulti(ms, muted: muted) { p in
+                    exportProgress = p
+                }
+            } else {
+                guard let url = assetURL else {
+                    exporting = false
+                    return
+                }
+                ok = await VideoExporter.export(
+                    source: url, speed: speed, muted: muted, filter: filter
+                ) { p in
+                    exportProgress = p
+                }
             }
             exporting = false
             message = ok ? "已导出并保存到相册" : "导出失败，请重试"
+        }
+    }
+
+    // MARK: - 多段时间轴
+
+    private func seedSegments() {
+        guard let url = assetURL else { return }
+        segments = [SegRow(url: url, duration: 10)]
+    }
+
+    private var multiList: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Text("时间轴 · \(segments.count) 段")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                PhotosPicker("加片段", selection: addPicker, matching: .movie)
+            }
+            ForEach($segments) { $seg in
+                segRow(seg: $seg)
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    @State private var addPicker: [PHPickerItem] = []
+
+    private func segRow(seg: Binding<SegRow>) -> some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                if let idx = segments.firstIndex(where: { $0.id == seg.wrappedValue.id }) {
+                    Text("#\(idx + 1)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(VideoFilter.allCases.prefix(3), id: \.self) { f in
+                    chip(f.rawValue, selected: seg.wrappedValue.filter == f) {
+                        seg.wrappedValue.filter = f
+                    }
+                }
+                Spacer()
+                Button(role: .destructive) {
+                    segments.removeAll { $0.id == seg.wrappedValue.id }
+                } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }
+            }
+            HStack(spacing: 8) {
+                chip(String(format: "%.1f×", seg.wrappedValue.speed),
+                     selected: seg.wrappedValue.speed == 1.0) {
+                    let order: [Float] = [1.0, 1.5, 2.0]
+                    let cur = order.firstIndex { abs($0 - seg.wrappedValue.speed) < 0.1 } ?? 0
+                    seg.wrappedValue.speed = order[(cur + 1) % order.count]
+                }
+                chip("首尾交叉 0.5s", selected: seg.wrappedValue.fade) {
+                    seg.wrappedValue.fade.toggle()
+                }
+                Toggle("静音", isOn: Binding(
+                    get: { muted },
+                    set: { muted = $0 }
+                ))
+                .font(.system(size: 11))
+                .toggleStyle(.button)
+                .labelsHidden()
+            }
+        }
+        .padding(10)
+        .background(Color.gray.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .onChange(of: addPicker) { items in
+            Task {
+                for item in items {
+                    if let data = try? await item.loadTransferable(type: Data.self) {
+                        let url = FileManager.default.temporaryDirectory
+                            .appendingPathComponent("vedit_seg_\(UUID().uuidString).mp4")
+                        try? data.write(to: url)
+                        segments.append(SegRow(url: url, duration: 10))
+                    }
+                }
+                addPicker = []
+            }
         }
     }
 }

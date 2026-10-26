@@ -98,6 +98,7 @@ struct CameraPage: View {
     @State private var showShareSheet: Bool = false
     @State private var timerSeconds: Int?
     @State private var timelapseDone: String?
+    @State private var slowMoDone: String?
 
     var body: some View {
         ZStack {
@@ -131,6 +132,13 @@ struct CameraPage: View {
                 Task {
                     _ = await PHLibraryService.requestAuth()
                     _ = PHLibraryService.saveVideo(url)
+                }
+            }
+            engine.onSlowMoFinished = { _ in
+                slowMoDone = "慢动作成片 0.25× 已存相册"
+                Task {
+                    try? await Task.sleep(nanoseconds: 4_000_000_000)
+                    self.slowMoDone = nil
                 }
             }
             engine.setFrameCallback { buf in
@@ -311,9 +319,11 @@ struct CameraPage: View {
             shutterButton
             Spacer()
             if engine.mode == .night {
-                Button("夜景长曝", action: {})
-                    .font(CNTheme.f12)
-                    .foregroundStyle(Color(CNTheme.cinnabar))
+                Button(engine.nightStack ? "多帧×5 融合" : "单帧长曝") {
+                    engine.nightStack.toggle()
+                }
+                .font(CNTheme.f12)
+                .foregroundStyle(Color(CNTheme.cinnabar))
             } else {
                 Button { } label: {
                     Circle().fill(.white.opacity(0.15)).frame(width: 56, height: 56)
@@ -358,6 +368,11 @@ struct CameraPage: View {
                     .frame(width: 14, height: 14)
                 Text(engine.isCapturing ? "停止" : "录像")
                     .font(CNTheme.f10)
+                if let m = slowMoDone {
+                    Text(m)
+                        .font(CNTheme.f10)
+                        .foregroundStyle(Color(CNTheme.cinnabar))
+                }
             }
             .foregroundStyle(.white)
             .frame(width: 56, height: 56)

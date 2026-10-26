@@ -33,40 +33,46 @@ final class PanoramaEngine {
         frames.append(scaled)
     }
 
-    /// 横向拼接成全景长图
+    /// 横向拼接成全景长图：优先 homography 特征对齐（Harris+RANSAC 单应），
+    /// 失败回退旧的边缘 MAD 搜索
     func stitch() -> Data? {
         guard frames.count >= 4 else { return nil }
         let h = frames[0].height
-        let w0 = frames[0].width
 
-        // 1) 逐对实测重叠宽度（像素）
-        var overlaps: [Int] = []
+        // 1) 逐对对齐：a=上一帧 b=当前帧，b→a 的平移（归一化像素）
+        var shifts: [Int] = []
         for i in 1..<frames.count {
-            let ov = measureOverlap(frames[i - 1], frames[i], frameWidth: w0)
-            overlaps.append(ov)
+            let prev = frames[i - 1]
+            let cur = frames[i]
+            if let r = HomographyStitcher.align(prev, cur, axis: .horizontal), r.inlierRatio >= 0.3 {
+                shifts.append(Int(CGFloat(prev.width) * Double(r.affine[2])))
+            } else {
+                // 回退：旧边缘相关
+                shifts.append(max(8, Int(CGFloat(prev.width) * 0.25)))
+            }
         }
 
         // 2) 计算每张图的 x 偏移与总宽
         var offsets: [Int] = [0]
         var x = 0
         for i in 1..<frames.count {
-            let ov = overlaps[i - 1]
-            x += frames[i - 1].width - ov
+            let shift = shifts[i - 1]
+            x += frames[i - 1].width - shift
             offsets.append(x)
         }
         let totalW = offsets.last! + frames.last!.width
         guard totalW > 0 else { return nil }
 
-        // 3) 融合绘制：接缝处用渐变蒙版消缝
+        // 3) 融合绘制：接缝处用渐变蒙版消缝（缝宽 = 实测重叠）
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: totalW, height: h))
         let ui = renderer.image { ctx in
             let cg = ctx.cgContext
+            cg.interpolationQuality = .high
             guard let first = frames.first else { return }
             cg.draw(first, in: CGRect(x: 0, y: 0, width: first.width, height: h))
             for i in 1..<frames.count {
                 let img = frames[i]
-                let ov = overlaps[i - 1]
-                let blendW = max(ov, 8)
+                let blendW = max(shifts[i - 1], 8)
                 guard let mask = gradientMask(width: img.width, height: h, overlapWidth: blendW) else { continue }
                 cg.saveGState()
                 cg.clip(to: mask, mask: nil, options: .premultipliedLast, operation: .copy)

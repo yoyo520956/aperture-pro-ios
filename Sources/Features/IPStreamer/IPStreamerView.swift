@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// IP 推流面板：局域网 TCP 推 JPEG 帧
-/// 接收方直接连 IPStreamerService.serverIP : 8585
+/// IP 推流面板：局域网标准 HTTP MJPEG 流
+/// 接收方浏览器 / VLC / ffplay 直接开 streamer.streamURL
 struct IPStreamerView: View {
     @ObservedObject private var streamer = IPStreamerService.shared
     @Environment(\.scenePhase) private var scenePhase
@@ -73,7 +73,7 @@ struct IPStreamerView: View {
         HStack(spacing: 12) {
             cell("端口", "\(IPStreamerService.port)")
             Divider().frame(height: 40)
-            cell("协议", "TCP")
+            cell("协议", "HTTP MJPEG")
             Divider().frame(height: 40)
             cell("格式", "JPEG 帧")
         }
@@ -88,9 +88,9 @@ struct IPStreamerView: View {
             Text("本机地址")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text("\(streamer.serverIP):\(IPStreamerService.port)")
+            Text(streamer.streamURL)
                 .font(.system(size: 16, weight: .medium, design: .monospaced))
-            Text("接收方同网段连上后持续收帧：4 字节大端长度 + JPEG 载荷")
+            Text("浏览器 / VLC / ffplay 直接打开上面地址即可看流（同网段）")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .lineLimit(3)

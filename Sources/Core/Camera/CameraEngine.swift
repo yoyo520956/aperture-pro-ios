@@ -39,6 +39,12 @@ class CameraEngine: ObservableObject {
     var onPhotoCaptured: ((Data) -> Void)?
     /// 录像结束后回调（文件名）
     var onVideoFinished: ((String) -> Void)?
+    /// 慢动作成片（0.25× 导出）完成后回调
+    var onSlowMoFinished: ((String) -> Void)?
+    /// 夜景是否走多帧堆栈融合（默认开；关 = 单帧长曝）
+    @Published var nightStack: Bool = true
+    private var nightQueue: [CIImage] = []
+    private var nightEVs: [Double] = []
 
     static var mediaDir: URL {
         let docs = FileManager.default
@@ -192,6 +198,10 @@ class CameraEngine: ObservableObject {
         }
         switch mode {
         case .night:
+            if nightStack {
+                captureNightStack()
+                return
+            }
             if AVCapturePhotoSettings.supportsLowLightMode {
                 settings.lowLightMode = .night
             }
@@ -248,7 +258,93 @@ class CameraEngine: ObservableObject {
         guard isCapturing, mode == .video || mode == .slowMo else { return nil }
         movieOutput.stopRecording()
         isCapturing = false
-        return recordingName
+        let name = recordingName
+        // 慢动作模式：自动把 120fps 原片导成 0.25× 慢放成片进相册
+        if mode == .slowMo {
+            Task { [weak self] in
+                let ok = await self?.exportSlowMo(name) ?? false
+                if ok {
+                    self?.onSlowMoFinished?("slowmo")
+                }
+            }
+        }
+        return name
+    }
+
+    /// 120fps 源 → 0.25× 慢放成片（去原声）
+    func exportSlowMo(_ name: String) async -> Bool {
+        let url = Self.mediaDir.appendingPathComponent(name)
+        return await SlowMotionExporter.export(source: url)
+    }
+
+    // MARK: 夜景多帧堆栈（5 帧 ISO 包围 + Mantiuk 融合）
+
+    func captureNightStack() {
+        guard let device = currentDevice else { return }
+        nightQueue = []
+        nightEVs = []
+        isCapturing = true
+        captureNightFrame(index: 0, of: 5, device: device)
+    }
+
+    private func captureNightFrame(index: Int, of total: Int, device: AVCaptureDevice) {
+        guard index < total else {
+            finishNightStack()
+            return
+        }
+        let settings = AVCapturePhotoSettings()
+        settings.photoQualityPrioritization = .quality
+        if photoOutput.isFlashSupported {
+            settings.flashMode = flashMode
+        }
+        if AVCapturePhotoSettings.supportsLowLightMode {
+            settings.lowLightMode = .night
+        }
+        // ISO 包围：base × 2^(index - mid)，夹在设备范围内
+        let mid = Double(total - 1) / 2.0
+        let base = Double(device.activeISO)
+        let iso = Int((base * pow(2.0, Double(index) - mid)).rounded())
+        settings.iso = max(device.minISO, min(device.maxISO, iso))
+        settings.shutterDuration = device.maximumShutterDuration
+        let ev = Double(index) - mid
+        photoOutput.capturePhoto(
+            with: settings,
+            delegate: NightStackDelegate(self, index: index, total: total, device: device, ev: ev)
+        )
+    }
+
+    private func finishNightStack() {
+        let frames = nightQueue
+        let evs = nightEVs
+        nightQueue = []
+        nightEVs = []
+        guard !frames.isEmpty else {
+            isCapturing = false
+            return
+        }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            var jpeg: Data?
+            if let fused = NightFusion.fuse(frames: frames, evs: evs) {
+                jpeg = NightFusion.renderJPEG(fused)
+            }
+            if jpeg == nil, let fallback = frames[frames.count / 2] {
+                jpeg = NightFusion.renderJPEG(fallback)
+            }
+            DispatchQueue.main.async {
+                guard let data = jpeg else {
+                    self.isCapturing = false
+                    return
+                }
+                let url = Self.mediaDir.appendingPathComponent(
+                    "night_\(Int(Date().timeIntervalSince1970)).jpg"
+                )
+                try? data.write(to: url)
+                _ = PHLibraryService.saveImage(data)
+                self.isCapturing = false
+                self.onPhotoCaptured?(data)
+            }
+        }
     }
 
     // MARK: 回调注入
@@ -278,6 +374,40 @@ extension CameraEngine {
 }
 
 extension CameraEngine {
+    /// 夜景堆栈拍照委托：逐帧 ISO 包围 → 收齐 5 帧后进融合
+    struct NightStackDelegate: NSObject, AVCapturePhotoCaptureDelegate {
+        let parent: CameraEngine
+        let index: Int
+        let total: Int
+        let device: AVCaptureDevice
+        let ev: Double
+
+        func photoOutput(
+            _ output: AVCapturePhotoOutput,
+            didFinishProcessingPhoto photo: AVCapturePhoto,
+            error: Error?
+        ) {
+            DispatchQueue.main.async {
+                if let data = photo.fileDataRepresentation(),
+                   let ci = CIImage(jpegDataRepresentation: data) {
+                    self.parent.nightQueue.append(ci)
+                    self.parent.nightEVs.append(self.ev)
+                }
+                if self.index + 1 < self.total {
+                    self.parent.captureNightFrame(index: self.index + 1, of: self.total, device: self.device)
+                } else {
+                    self.parent.finishNightStack()
+                }
+            }
+        }
+
+        func photoOutput(
+            _ output: AVCapturePhotoOutput,
+            didFinishCapturingPhotoInHighResolution _ photo: AVCapturePhoto,
+            error: Error?
+        ) {}
+    }
+
     struct PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
         let parent: CameraEngine
 

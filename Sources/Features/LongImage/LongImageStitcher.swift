@@ -14,10 +14,10 @@ enum LongImageStitcher {
         let normW = max(256, min(maxW, 3000))
         let scaled: [UIImage] = images.map { scaleWidth($0, normW) }
 
-        // 逐对测重叠（normW 像素）
+        // 逐对测重叠（normW 像素）：优先 homography 特征对齐，失败回退旧边缘相关
         var overlaps: [Int] = []
         for i in 1..<scaled.count {
-            overlaps.append(measureVerticalOverlap(scaled[i - 1], scaled[i], width: normW))
+            overlaps.append(measureOverlapHi(scaled[i - 1], scaled[i], width: normW))
         }
 
         // 总高
@@ -88,7 +88,18 @@ enum LongImageStitcher {
         return img.cgImage
     }
 
-    // MARK: - 纵向重叠实测（降采样灰度逐列均值差最小）
+    // MARK: - 纵向重叠实测（优先 homography 特征对齐，回退逐列均值差）
+
+    private static func measureOverlapHi(_ a: UIImage, _ b: UIImage, width: Int) -> Int {
+        // homography：Harris 角点 + RANSAC 单应（纵轴）；1 - ty_norm 即重叠比例
+        if let ca = a.cgImage, let cb = b.cgImage {
+            if let r = HomographyStitcher.align(ca, cb, axis: .vertical), r.inlierRatio >= 0.3 {
+                let ov = Int(CGFloat(width) * Double(1 - Double(r.affine[5])))
+                return max(0, min(width, ov))
+            }
+        }
+        return measureVerticalOverlap(a, b, width: width)
+    }
 
     private static func measureVerticalOverlap(_ a: UIImage, _ b: UIImage, width: Int) -> Int {
         guard let ga = gray(a, targetWidth: matchWidth),
