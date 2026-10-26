@@ -1,25 +1,8 @@
 import SwiftUI
-import Vision
 
 class QRScanner: ObservableObject {
     @Published var scanResult: String?
     @Published var isScanning: Bool = false
-
-    func scan(from image: UIImage) {
-        guard let cgImage = image.cgImage else { return }
-        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up)
-        let request = VNBarcodeRequest()
-        request.recognitionLevel = .accurate
-        do {
-            try handler.perform([request])
-            if let observations = request.results, let first = observations.first {
-                scanResult = first.payloadStringValue
-                isScanning = false
-            }
-        } catch {
-            print("QR 扫描失败: \(error)")
-        }
-    }
 
     func reset() {
         scanResult = nil
@@ -40,12 +23,11 @@ struct QRScannerView: View {
                     Image(systemName: "qrcode.viewfinder")
                         .font(.system(size: 48))
                         .foregroundStyle(.green)
-                    Text(scanner.isScanning ? "扫描中..." : "将二维码对准框内")
+                    Text("扫码功能开发中")
                         .font(.caption)
                         .foregroundStyle(.white)
                 }
             }
-
             if let result = scanner.scanResult {
                 VStack(spacing: 8) {
                     Text("识别结果")
@@ -53,26 +35,19 @@ struct QRScannerView: View {
                     Text(result)
                         .font(.subheadline)
                         .textSelection(.enabled)
-                        .lineLimit(2)
-                        .truncationMode(.middle)
                     HStack(spacing: 12) {
                         Button("复制") {
                             UIPasteboard.general.string = result
                         }
                         .buttonStyle(.bordered)
-                        Button("关闭") {
-                            scanner.reset()
-                        }
-                        .buttonStyle(.bordered)
+                        Button("关闭") { scanner.reset() }
+                            .buttonStyle(.bordered)
                     }
                 }
                 .padding()
                 .background(Color.gray.opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
-        }
-        .onAppear {
-            scanner.isScanning = true
         }
     }
 }
