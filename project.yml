@@ -100,8 +100,8 @@ targets:
     sources:
       - path: ShareExtension
     dependencies:
-      - sdkFramework: IntentsUI
-      - sdkFramework: ExtensionFoundation
+      - sdk: IntentsUI
+      - sdk: ExtensionFoundation
     info:
       path: ShareExtension/Info.plist
       properties:
