@@ -54,15 +54,16 @@ private func ingestBestEffort() {
             }
             // 扩展沙箱内无 App Group，无法直接拿主 App 的附件；
             // 若系统把共享项临时落盘到扩展容器则这里可读到，否则跳过。
-            let searchPaths: [FileManager.SearchPathDirectory] = [.cachesDirectory, .temporaryDirectory]
-            let bases = FileManager.default.urls(for: searchPaths, in: .userDomainMask)
+            // 注意：SearchPathDirectory 没有 .temporaryDirectory 成员，temp 目录要用 property
+            let cacheDirs = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
+            let bases = cacheDirs + [FileManager.default.temporaryDirectory]
             var photos: [Data] = []
             for base in bases {
                 let items = (try? FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: nil)) ?? []
                 for url in items {
                     let ext = url.pathExtension.lowercased()
                     if ext == "jpg" || ext == "jpeg" {
-                        if let data = try? Data(contentsOf: url) where !data.isEmpty {
+                        if let data = try? Data(contentsOf: url), !data.isEmpty {
                             photos.append(data)
                         }
                     }
