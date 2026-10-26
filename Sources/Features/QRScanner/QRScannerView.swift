@@ -6,7 +6,8 @@ class QRScanner: ObservableObject {
     @Published var isScanning: Bool = false
 
     func scan(from image: UIImage) {
-        let handler = VNImageRequestHandler(cgImage: image.cgImage!)
+        guard let cgImage = image.cgImage else { return }
+        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up)
         let request = VNBarcodeRequest()
         request.recognitionLevel = .accurate
         do {
@@ -28,7 +29,6 @@ class QRScanner: ObservableObject {
 
 struct QRScannerView: View {
     @StateObject var scanner = QRScanner()
-    @State private var showResult: Bool = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -62,7 +62,6 @@ struct QRScannerView: View {
                         .buttonStyle(.bordered)
                         Button("关闭") {
                             scanner.reset()
-                            showResult = false
                         }
                         .buttonStyle(.bordered)
                     }
