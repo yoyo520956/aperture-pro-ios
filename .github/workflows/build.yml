@@ -47,9 +47,8 @@ jobs:
             cp -r AperturePro.app Payload/
             zip -r /workspace/AperturePro-unsigned.ipa Payload/
             echo "✅ IPA exported: $(ls -lh /workspace/AperturePro-unsigned.ipa)"
-            ls Payload/AperturePro.app 2>/dev/null | head -20
             echo "=== 内嵌扩展 ==="
-            ls Payload/AperturePro.app/PlugIns 2>/dev/null || echo "无 PlugIns（正常：扩展嵌入方式可能不同）"
+            ls Payload/AperturePro.app/PlugIns 2>/dev/null || echo "无 PlugIns 目录"
           else
             echo "⚠️ 未找到 archive，检查编译日志"
             exit 1
@@ -68,18 +67,7 @@ jobs:
           if [ -z "$BINARY" ]; then BINARY=$(find build -name "AperturePro" -type f 2>/dev/null | head -1); fi
           if [ -n "$BINARY" ]; then
             echo "Binary: $BINARY ($(wc -c < "$BINARY") bytes)"
-            python3 - "$BINARY" <<'PY'
-import sys
-b = open(sys.argv[1], "rb").read()
-checks = ["光圈", "系统相册", "文档扫描", "慢动作", "夜景", "拼长图", "白平衡", "iCloud", "Live", "全景"]
-for c in checks:
-    print(f"  {c}: {b.count(c.encode('utf-8'))}")
-PY
+            python3 -c "import sys; b=open(sys.argv[1],'rb').read(); [print(' ', c, b.count(c.encode('utf-8'))) for c in ['光圈','系统相册','文档扫描','慢动作','夜景','拼长图','白平衡','iCloud','Live','全景']]" "$BINARY"
           fi
           echo "=== 版本核验 ==="
-          python3 - <<'PY'
-import plistlib, glob
-for p in glob.glob("build/AperturePro.xcarchive/Products/*App/Info.plist"):
-    d = plistlib.load(open(p, "rb"))
-    print("  ", d.get("CFBundleShortVersionString"), d.get("CFBundleVersion"))
-PY
+          python3 -c "import plistlib, glob; [print(' ', p, plistlib.load(open(p,'rb')).get('CFBundleShortVersionString'), plistlib.load(open(p,'rb')).get('CFBundleVersion')) for p in glob.glob('build/AperturePro.xcarchive/Products/*App/Info.plist')]"
