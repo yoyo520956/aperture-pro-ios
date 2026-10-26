@@ -1,6 +1,5 @@
 import SwiftUI
 import AVFoundation
-import MediaPlayer
 
 class VideoEditor: ObservableObject {
     @Published var isProcessing: Bool = false
@@ -10,16 +9,6 @@ class VideoEditor: ObservableObject {
     @Published var selectedTool: VideoTool = .trim
     @Published var trimStart: Double = 0
     @Published var trimEnd: Double = 0
-    @Published var volume: Float = 1.0
-    @Published var isMuted: Bool = false
-
-    private let assetWriter: AVAssetWriter?
-    private let exportSession: AVAssetExportSession?
-
-    init() {
-        self.assetWriter = nil
-        self.exportSession = nil
-    }
 
     func loadVideo(_ url: URL) {
         sourceURL = url
@@ -37,15 +26,15 @@ class VideoEditor: ObservableObject {
         guard let source = sourceURL else { return }
         isProcessing = true
         progress = 0
-
         DispatchQueue.global(qos: .userInitiated).async {
             let asset = AVURLAsset(url: source)
             let export = AVAssetExportSession(
                 asset: asset,
                 presetName: AVAssetExportPresetHEVCHighestQuality
             )
-            let outURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-                .appendingPathComponent("trimmed_\(Date().timeIntervalSince1970).mov")
+            let outURL = FileManager.default
+                .urls(for: .documentDirectory, in: .userDomainMask).first!
+                .appendingPathComponent("trimmed_\(Int(Date().timeIntervalSince1970)).mov")
             export.outputURL = outURL
             export.outputFileType = .mov
             export.trimRange = CMTimeRange(
@@ -53,24 +42,21 @@ class VideoEditor: ObservableObject {
                 end: CMTime(seconds: self.trimEnd, preferredTimescale: 600)
             )
             export.shouldOptimizeForNetworkUse = true
-
             export.exportAsynchronously {
                 DispatchQueue.main.async {
                     self.isProcessing = false
-                    if let error = export.error {
-                        print("导出失败: \(error)")
+                    if let err = export.error {
+                        print("导出失败: \(err)")
                     } else {
                         self.resultURL = outURL
                         self.progress = 1.0
                     }
                 }
             }
-
-            // 进度监听
             Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
-                let p = export.progress
-                self?.progress = p
-                if p >= 1.0 { timer.invalidate() }
+                guard let self else { timer.invalidate(); return }
+                self.progress = export.progress
+                if export.progress >= 1.0 { timer.invalidate() }
             }
         }
     }
@@ -80,18 +66,15 @@ class VideoEditor: ObservableObject {
         isProcessing = true
         DispatchQueue.global(qos: .userInitiated).async {
             let asset = AVURLAsset(url: source)
-            let export = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHEVCHighestQuality)
-            let outURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-                .appendingPathComponent("muted_\(Date().timeIntervalSince1970).mov")
+            let export = AVAssetExportSession(
+                asset: asset,
+                presetName: AVAssetExportPresetHEVCHighestQuality
+            )
+            let outURL = FileManager.default
+                .urls(for: .documentDirectory, in: .userDomainMask).first!
+                .appendingPathComponent("muted_\(Int(Date().timeIntervalSince1970)).mov")
             export.outputURL = outURL
             export.outputFileType = .mov
-            export.shouldOptimizeForNetworkUse = true
-
-            let videoTrack = asset.tracks(withMediaType: .video).first
-            if let exportTrack = export.outputTracks.first, let sourceTrack = videoTrack {
-                exportTrack.assetTrack = sourceTrack
-            }
-
             export.exportAsynchronously {
                 DispatchQueue.main.async {
                     self.isProcessing = false
@@ -108,8 +91,6 @@ class VideoEditor: ObservableObject {
         progress = 0
         trimStart = 0
         trimEnd = 0
-        volume = 1.0
-        isMuted = false
     }
 }
 
@@ -123,7 +104,6 @@ enum VideoTool: String, CaseIterable, Codable {
 struct VideoEditorView: View {
     @StateObject private var editor = VideoEditor()
     @State private var showVideoPicker: Bool = false
-    @State private var showShare: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -132,13 +112,10 @@ struct VideoEditorView: View {
                     VideoPlayerView(url: url)
                         .frame(height: 200)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
-
                     toolSelector
-
                     if editor.selectedTool == .trim {
                         trimControls
                     }
-
                     HStack(spacing: 12) {
                         Button("导出") {
                             switch editor.selectedTool {
@@ -151,11 +128,10 @@ struct VideoEditorView: View {
                         .disabled(editor.isProcessing)
 
                         if let result = editor.resultURL {
-                            Button("分享") { showShare = true }
+                            Button("分享") { }
                                 .buttonStyle(.bordered)
                         }
                     }
-
                     if editor.isProcessing {
                         ProgressView(value: editor.progress)
                             .padding(.horizontal)
@@ -181,52 +157,54 @@ struct VideoEditorView: View {
                     editor.loadVideo(url)
                 }
             }
-            .sheet(isPresented: $showShare) {
-                ShareView(items: editor.resultURL.map { [$0] } ?? [])
-            }
         }
     }
 
     private var toolSelector: some View {
         HStack(spacing: 8) {
             ForEach(VideoTool.allCases, id: \.self) { tool in
-                Button(tool.rawValue) {
-                    editor.selectedTool = tool
-                }
-                .buttonStyle(
-                    editor.selectedTool == tool
-                        ? .borderedProminent
-                        : .bordered
-                )
-                .font(.system(size: 13))
+                toolButton(tool)
             }
         }
         .padding(.horizontal)
     }
 
+    private func toolButton(_ tool: VideoTool) -> some View {
+        Group {
+            if editor.selectedTool == tool {
+                Button(tool.rawValue) {
+                    editor.selectedTool = tool
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Button(tool.rawValue) {
+                    editor.selectedTool = tool
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .font(.system(size: 13))
+    }
+
     private var trimControls: some View {
         VStack(spacing: 8) {
             HStack {
-                Text("起点: \(String(format: "%.1f", editor.trimStart))s")
+                Text(String(format: "起点: %.1fs", editor.trimStart))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text("终点: \(String(format: "%.1f", editor.trimEnd))s")
+                Text(String(format: "终点: %.1fs", editor.trimEnd))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Slider(
-                value: $editor.trimStart,
-                in: 0...max(editor.trimEnd - 0.5, 0.1),
-                step: 0.1
-            )
-            .tint(.blue)
-            Slider(
-                value: $editor.trimEnd,
-                in: min(editor.trimStart + 0.5, 999)...999,
-                step: 0.1
-            )
-            .tint(.orange)
+            Slider(value: $editor.trimStart,
+                   in: 0...max(editor.trimEnd - 0.5, 0.1),
+                   step: 0.1)
+                .tint(.blue)
+            Slider(value: $editor.trimEnd,
+                   in: min(editor.trimStart + 0.5, 999)...999,
+                   step: 0.1)
+                .tint(.orange)
         }
         .padding(.horizontal)
     }
@@ -243,7 +221,7 @@ struct VideoPlayerView: UIViewRepresentable {
         return playerLayer
     }
 
-    func updateUIView(_ playerLayer: AVPlayerLayer, context: Context) {
+    func updateUIView(_ playerLayer: AVPlayerLayer, context: _ Context) {
     }
 }
 
