@@ -81,7 +81,7 @@ private func ingestBestEffort() {
             for (i, data) in photos.enumerated() {
                 let url = tmp.appendingPathComponent("share_ingest_\(i).jpg")
                 guard (try? data.write(to: url)) != nil else { continue }
-                _ = PHAssetChangeRequest.creationRequestForAsset(atFileURL: url)
+                _ = PHAssetCreationRequest.creationRequestForAsset(atFileURL: url)
             }
         }
         PHPhotoLibrary.shared().synchronizeChanges()
