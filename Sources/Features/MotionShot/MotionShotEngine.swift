@@ -37,19 +37,20 @@ class MotionShotEngine: ObservableObject {
         }
         guard !ciImages.isEmpty else { return nil }
 
-        var result = ciImages[0]
+        var result: CIImage? = ciImages[0]
         for i in stride(from: 1, to: ciImages.count, by: 1) {
+            guard let currentResult = result else { break }
             let filter = CIFilter.blendWithMask()
-            filter.inputImage = result
+            filter.inputImage = currentResult
             filter.backgroundImage = ciImages[i]
             let mask = ciImages[i].clampedToExtent()
             filter.maskImage = mask
             result = filter.outputImage
         }
 
-        guard let cgImage = ciContext.createCGImage(result, from: result.extent) else {
-            return nil
-        }
+        guard let finalResult = result,
+              let cgImage = ciContext.createCGImage(finalResult, from: finalResult.extent)
+        else { return nil }
         return UIImage(cgImage: cgImage)
     }
 
