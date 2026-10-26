@@ -107,7 +107,7 @@ targets:
         CFBundleVersion: "1"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
-          NSExtensionPrincipalClass: ApertureProShare.ShareViewController
+          NSExtensionPrincipalClass: ApertureProShare.ApertureProShare
           NSExtensionAttributes:
             NSExtensionService:
               NSExtensionServiceTypes:
@@ -125,14 +125,6 @@ targets:
       CODE_SIGNING_REQUIRED: NO
       CODE_SIGN_IDENTITY: ""
       CODE_SIGNING_ALLOWED: NO
-      OTHER_LDFLAGS:
-        - "$(inherited)"
-        - "-framework"
-        - "IntentsUI"
-        - "-framework"
-        - "Intents"
-        - "-framework"
-        - "ExtensionFoundation"
 
 schemes:
   AperturePro:
