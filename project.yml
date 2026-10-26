@@ -99,9 +99,6 @@ targets:
     deploymentTarget: "16.0"
     sources:
       - path: ShareExtension
-    dependencies:
-      - sdk: IntentsUI
-      - sdk: ExtensionFoundation
     info:
       path: ShareExtension/Info.plist
       properties:
@@ -128,6 +125,14 @@ targets:
       CODE_SIGNING_REQUIRED: NO
       CODE_SIGN_IDENTITY: ""
       CODE_SIGNING_ALLOWED: NO
+      OTHER_LDFLAGS:
+        - "$(inherited)"
+        - "-framework"
+        - "IntentsUI"
+        - "-framework"
+        - "Intents"
+        - "-framework"
+        - "ExtensionFoundation"
 
 schemes:
   AperturePro:
