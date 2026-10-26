@@ -39,13 +39,14 @@ class MotionShotEngine: ObservableObject {
 
         var result: CIImage? = ciImages[0]
         for i in stride(from: 1, to: ciImages.count, by: 1) {
-            guard let currentResult = result else { break }
-            let filter = CIFilter.blendWithMask()
-            filter.inputImage = currentResult
-            filter.backgroundImage = ciImages[i]
+            guard let current = result,
+                  let blend = CIFilter(name: "CIBlendWithMask")
+            else { break }
+            blend.setValue(current, forKey: kCIInputImageKey)
+            blend.setValue(ciImages[i], forKey: "backgroundImage")
             let mask = ciImages[i].clampedToExtent()
-            filter.maskImage = mask
-            result = filter.outputImage
+            blend.setValue(mask, forKey: "maskImage")
+            result = blend.outputImage
         }
 
         guard let finalResult = result,
@@ -56,7 +57,8 @@ class MotionShotEngine: ObservableObject {
 
     func saveResult(_ image: UIImage) -> String? {
         guard let data = image.jpegData(compressionQuality: 0.92) else { return nil }
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let docs = FileManager.default
+            .urls(for: .documentDirectory, in: .userDomainMask).first!
         let filename = "motion_\(Int(Date().timeIntervalSince1970)).jpg"
         let url = docs.appendingPathComponent(filename)
         try? data.write(to: url)
