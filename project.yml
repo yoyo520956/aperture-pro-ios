@@ -107,7 +107,7 @@ targets:
         CFBundleVersion: "1"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
-          NSExtensionPrincipalClass: ApertureProShare.ApertureProShare
+          NSExtensionPrincipalClass: ApertureProShare.ShareViewController
           NSExtensionAttributes:
             NSExtensionService:
               NSExtensionServiceTypes:

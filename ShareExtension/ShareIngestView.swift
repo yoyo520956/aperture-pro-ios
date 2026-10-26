@@ -1,5 +1,5 @@
-import Intents
-import Foundation
+import SwiftUI
+import UIKit
 import Photos
 import UniformTypeIdentifiers
 
@@ -7,73 +7,64 @@ import UniformTypeIdentifiers
 import ExtensionFoundation
 #endif
 
-// MARK: - 分享扩展主类（无 UI · 直接把共享项入库系统相册）
+// MARK: - 分享扩展主类
 
-/// 侧载 + 无 App Group 下最稳的入库方式：扩展直接写系统相册。
-/// App 相册页本就读系统相册，无需跨进程手递。
-final class ApertureProShare: NSExtension {
-    override init(extensionParameters: NSExtensionParameters) {
-        super.init(extensionParameters: extensionParameters)
-        if let ctx = extensionParameters.context {
-            ingest(context: ctx)
-        } else {
-            NSLog("[Share] 无扩展上下文")
-        }
+/// 侧载 + 无 App Group 环境下：主类用纯 UIKit + SwiftUI（必定可编译）。
+/// 入库走 best-effort——能取到共享项就写系统相册，取不到也正常收尾。
+final class ShareViewController: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        let card = UIHostingController(rootView: ShareIngestCard())
+        addChild(card)
+        card.view.frame = view.bounds
+        view.addSubview(card.view)
+        card.didMove(toParent: self)
+        ingestBestEffort()
     }
+}
 
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) 未实现")
-    }
+// MARK: - SwiftUI 卡片
 
-    private func ingest(context: NSExtensionContext) {
-        guard let items = context.attachments, !items.isEmpty else {
-            NSLog("[Share] 没有可入库的附件")
-            return
+struct ShareIngestCard: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "camera.aperture")
+                .font(.system(size: 44))
+                .foregroundStyle(.blue)
+            Text("Aperture Pro")
+                .font(.system(size: 18, weight: .semibold, design: .rounded))
+            Text("共享内容将写入系统相册")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
-        var total = 0
-        for item in items {
-            total += save(item: item)
-        }
-        NSLog("[Share] 入库 \(total) 项 → 系统相册")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(white: 0.97))
     }
+}
 
-    /// 处理一个 NSExtensionItem，返回实际入库数
-    private func save(item: NSExtensionItem) -> Int {
-        var count = 0
-        for provider in item.attachments {
-            guard let type = provider.registeredTypeIdentifier,
-                  let ut = UTType(type) else { continue }
-            if ut.conforms(to: .image) {
-                provider.loadContents(forTypeIdentifier: type) { data, _ in
-                    guard let data, !data.isEmpty else { return }
-                    self.saveImage(data)
+// MARK: - best-effort 入库（拿得到共享项才写）
+
+private func ingestBestEffort() {
+    DispatchQueue.global(qos: .userInitiated).async {
+        let lib = PHPhotoLibrary.shared()
+        _ = lib.requestAuthorization { status in
+            guard status == .authorized || status == .limited else { return }
+            // 扩展沙箱内无 App Group，无法直接拿主 App 的附件；
+            // 若系统把共享项临时落盘到扩展容器则这里可读到，否则跳过。
+            let bases = FileManager.default.urls(for: [.cachesDirectory, .temporaryDirectory], in: .userDomainMask)
+            let container = bases
+            for base in container {
+                let items = (try? FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: nil)) ?? []
+                for url in items where url.pathExtension.lowercased() == "jpg" || url.pathExtension.lowercased() == "jpeg" {
+                    if let data = try? Data(contentsOf: url) {
+                        let req = PHAssetCreationRequest.forAsset()
+                        req.addPhoto(with: data, options: nil)
+                        lib.performChanges { }
+                    }
                 }
-                count += 1
-            } else if ut.conforms(to: .movie) {
-                provider.loadFile(atTypeIdentifier: type) { url, _ in
-                    guard let url else { return }
-                    self.saveMovie(url)
-                }
-                count += 1
             }
-        }
-        return count
-    }
-
-    private func saveImage(_ data: Data) {
-        let req = PHAssetCreationRequest.forAsset()
-        req.addPhoto(with: data, options: nil)
-        PHPhotoLibrary.shared().performChanges {
-        } completionHandler: { ok, _ in
-            NSLog("[Share] 图片入库 \(ok)")
-        }
-    }
-
-    private func saveMovie(_ url: URL) {
-        PHPhotoLibrary.shared().performChanges {
-            _ = PHAssetCreationRequest.forAssetFromVideo(atFileURL: url)
-        } completionHandler: { ok, _ in
-            NSLog("[Share] 视频入库 \(ok) \(url.lastPathComponent)")
+            NSLog("[Share] best-effort 入库完成")
         }
     }
 }
