@@ -55,12 +55,15 @@ class MotionShotEngine: ObservableObject {
         return UIImage(cgImage: cgImage)
     }
 
+    /// 存到 Documents/Media，和 App 媒体库 / iCloud 同步目录对齐
     func saveResult(_ image: UIImage) -> String? {
         guard let data = image.jpegData(compressionQuality: 0.92) else { return nil }
-        let docs = FileManager.default
-            .urls(for: .documentDirectory, in: .userDomainMask).first!
+        let fm = FileManager.default
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let media = docs.appendingPathComponent("Media", isDirectory: true)
+        try? fm.createDirectory(at: media, withIntermediateDirectories: true)
         let filename = "motion_\(Int(Date().timeIntervalSince1970)).jpg"
-        let url = docs.appendingPathComponent(filename)
+        let url = media.appendingPathComponent(filename)
         try? data.write(to: url)
         return filename
     }

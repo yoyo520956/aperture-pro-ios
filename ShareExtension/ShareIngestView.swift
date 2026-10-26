@@ -1,6 +1,9 @@
 import SwiftUI
 import Intents
 import IntentsUI
+#if canImport(ExtensionFoundation)
+import ExtensionFoundation
+#endif
 import UniformTypeIdentifiers
 
 /// 扩展上下文持有者（避免依赖 @Environment(\.extensionContext)，兼容 iOS 16）

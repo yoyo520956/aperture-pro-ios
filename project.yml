@@ -99,6 +99,9 @@ targets:
     deploymentTarget: "16.0"
     sources:
       - path: ShareExtension
+    dependencies:
+      - sdkFramework: IntentsUI
+      - sdkFramework: ExtensionFoundation
     info:
       path: ShareExtension/Info.plist
       properties:
