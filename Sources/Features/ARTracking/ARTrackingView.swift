@@ -2,15 +2,16 @@
 // SwiftUI 面部追踪叠加层视图
 // iOS 16+ / Swift 5.9
 //
-// 显示 4 个蓝色圆点标注面部关键位置，并通过连线建立面部结构
-// 支持开关追踪，配有中文状态标签
+// 4 个角点由 ARFaceAnchor.mesh 顶点投影后按行带聚类估计（见 ARState.updateLandmarks），
+// 不再是硬编码坐标；连线随脸移动
 
 import SwiftUI
 import ARKit
+import Combine
 
 // MARK: - Face Landmark View
 
-/// 单个面部角点标注（蓝色圆点 + 半透明）
+/// 单个面部角点标注（圆点 + 描边 + 阴影）
 @available(iOS 16.0, *)
 struct FaceLandmarkDot: View {
     let position: CGPoint
@@ -31,7 +32,7 @@ struct FaceLandmarkDot: View {
             )
             .position(position)
             .shadow(color: .black.opacity(0.4), radius: 3, x: 0, y: 2)
-            .tooltip(text: "\(label)", position: position)
+            .tooltip(text: label, position: position)
     }
 }
 
@@ -71,7 +72,7 @@ struct FaceTooltip: ViewModifier {
             content
             Text(text)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
                 .background(Color.black.opacity(0.65))
@@ -86,116 +87,106 @@ struct FaceTooltip: ViewModifier {
 
 /// 面部追踪叠加层主视图
 ///
-/// 接收 `ARState` 实例，在屏幕上渲染：
-/// - 5 条连线（左眼-右眼、鼻↔双眼、双眼→嘴）
-/// - 4 个蓝色圆点（左眼、右眼、鼻尖、嘴中）
-/// - 顶部状态标签
-/// - 底部切换按钮
+/// 角点坐标来源：ARState.landmarks（由 ARKit 人脸网格顶点投影估计），
+/// 连线为 左眼—右眼、鼻↔双眼、双眼→嘴
 @available(iOS 16.0, *)
 struct ARTrackingOverlay: View {
-    let arState: ARState
+    @ObservedObject var arState: ARState
+    let session: ARSession
     let screenSize: CGSize
-
-    // 4 个面部角点（在屏幕坐标系中）
-    @State private var leftEye    = CGPoint(x: 130, y: 280)
-    @State private var rightEye   = CGPoint(x: 260, y: 280)
-    @State private var noseTip    = CGPoint(x: 195, y: 370)
-    @State private var mouthCenter = CGPoint(x: 195, y: 460)
-
-    @State private var isTracking = false
 
     var body: some View {
         ZStack {
             Color.clear
-
-            // 连线层
-            FaceLine(start: leftEye, end: rightEye)
-                .stroke(Color.systemBlue.opacity(0.6), lineWidth: 2)
-            FaceLine(start: leftEye, end: noseTip)
-                .stroke(Color.systemBlue.opacity(0.6), lineWidth: 2)
-            FaceLine(start: rightEye, end: noseTip)
-                .stroke(Color.systemBlue.opacity(0.6), lineWidth: 2)
-            FaceLine(start: leftEye, end: mouthCenter)
-                .stroke(Color.systemBlue.opacity(0.5), lineWidth: 1.5)
-            FaceLine(start: rightEye, end: mouthCenter)
-                .stroke(Color.systemBlue.opacity(0.5), lineWidth: 1.5)
-
-            // 4 个角点标注
-            FaceLandmarkDot(position: leftEye,    label: "左眼", isActive: isTracking)
-            FaceLandmarkDot(position: rightEye,   label: "右眼", isActive: isTracking)
-            FaceLandmarkDot(position: noseTip,    label: "鼻尖", isActive: isTracking)
-            FaceLandmarkDot(position: mouthCenter, label: "嘴",  isActive: isTracking)
-
-            // 顶部状态栏
-            VStack(spacing: 0) {
-                HStack {
-                    Capsule(style: .circular)
-                        .fill(isTracking ? Color.green : Color.red)
-                        .frame(width: 8, height: 8)
-                    Text(isTracking ? "面部追踪 — 追踪中" : "面部追踪 — 未检测到")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white)
-                        .shadow(radius: 2)
-                    Spacer()
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.black.opacity(0.4))
-                .cornerRadius(20)
-                .padding(.top, 60)
-                .padding(.horizontal, 16)
-
-                Spacer()
-
-                // 切换按钮
-                HStack {
-                    Spacer()
-                    Button {
-                        withAnimation(.spring(response: 0.3)) {
-                            isTracking.toggle()
-                        }
-                    } label: {
-                        Text(isTracking ? "停止追踪" : "开始追踪")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 12)
-                            .background(
-                                LinearGradient(
-                                    colors: [Color.blue.opacity(0.8), Color.indigo.opacity(0.8)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .cornerRadius(24)
-                            .shadow(color: .blue.opacity(0.4), radius: 6, x: 0, y: 3)
-                    }
-                    .padding(.trailing, 24)
-                    .padding(.bottom, 40)
-                }
-            }
+            landmarkLayer
+            statusChip
+            toggleButton
         }
         .frame(width: screenSize.width, height: screenSize.height)
-        .onAppear {
-            // 从 ARState 同步追踪状态
-            isTracking = arState.isTracking
-        }
-        .onChange(of: arState.isTracking) { newValue in
-            isTracking = newValue
-        }
-        .onChange(of: arState.faceAnchor) { _ in
-            // 有锚点时刷新角点位置（此处使用模拟坐标，实际可从 mesh 计算）
-            updateLandmarkPositions()
+    }
+
+    // MARK: 角点 + 连线
+
+    @ViewBuilder
+    private var landmarkLayer: some View {
+        let ls = arState.landmarks
+        if ls.count == 4 {
+            FaceLine(start: ls[0].point, end: ls[1].point)
+                .stroke(Color.systemBlue.opacity(0.6), lineWidth: 2)
+            FaceLine(start: ls[0].point, end: ls[2].point)
+                .stroke(Color.systemBlue.opacity(0.6), lineWidth: 2)
+            FaceLine(start: ls[1].point, end: ls[2].point)
+                .stroke(Color.systemBlue.opacity(0.6), lineWidth: 2)
+            FaceLine(start: ls[0].point, end: ls[3].point)
+                .stroke(Color.systemBlue.opacity(0.5), lineWidth: 1.5)
+            FaceLine(start: ls[1].point, end: ls[3].point)
+                .stroke(Color.systemBlue.opacity(0.5), lineWidth: 1.5)
+
+            ForEach(0..<ls.count, id: \.self) { i in
+                FaceLandmarkDot(position: ls[i].point,
+                                label: ls[i].name,
+                                isActive: arState.isTracking)
+            }
         }
     }
 
-    // MARK: - Landmark Position Update
+    // MARK: 顶部状态栏
 
-    /// 根据当前 AR 锚点更新 4 个角点屏幕坐标
-    /// 实际实现应从 ARFaceAnchor.mesh.vertices 计算，此处使用占位坐标
-    private func updateLandmarkPositions() {
-        // TODO: 接入真实 mesh 顶点坐标映射
-        // 当前使用居中假想坐标，等待 ARTracker.swift 提供数据回调
+    private var statusChip: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Circle()
+                    .fill(arState.isTracking ? Color.green : Color.red)
+                    .frame(width: 8, height: 8)
+                Text(statusText)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white)
+                    .shadow(radius: 2)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.black.opacity(0.4))
+            .cornerRadius(20)
+            .padding(.top, 60)
+            .padding(.horizontal, 16)
+            Spacer()
+        }
+    }
+
+    private var statusText: String {
+        if !arState.isTracking { return "面部追踪 — 已暂停" }
+        return arState.landmarks.isEmpty ? "面部追踪 — 未检测到" : "面部追踪 — 追踪中"
+    }
+
+    // MARK: 底部切换按钮
+
+    private var toggleButton: some View {
+        HStack {
+            Spacer()
+            Button {
+                withAnimation(.spring(response: 0.3)) {
+                    arState.toggleTracking(with: session)
+                }
+            } label: {
+                Text(arState.isTracking ? "停止追踪" : "开始追踪")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.blue.opacity(0.8), Color.indigo.opacity(0.8)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .cornerRadius(24)
+                    .shadow(color: .blue.opacity(0.4), radius: 6, x: 0, y: 3)
+            }
+            .padding(.trailing, 24)
+            .padding(.bottom, 40)
+        }
     }
 }
 
@@ -207,6 +198,7 @@ struct ARTrackingOverlay_Previews: PreviewProvider {
     static var previews: some View {
         ARTrackingOverlay(
             arState: ARState(),
+            session: ARSession(),
             screenSize: CGSize(width: 390, height: 844)
         )
         .preferredColorScheme(.dark)

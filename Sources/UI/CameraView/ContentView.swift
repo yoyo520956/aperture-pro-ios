@@ -1,4 +1,8 @@
 import SwiftUI
+import UIKit
+import AVFoundation
+import CoreImage
+import QuartzCore
 
 // MARK: - 根视图：四个标签页 + 中式皮 + iCloud 场景联动
 
@@ -136,6 +140,9 @@ struct CameraPage: View {
                     if let pb = CVPixelBufferGetPixelBufferFromSampleBuffer(buf) {
                         engine.panoramaEngine.addFrame(pb)
                     }
+                }
+                if IPStreamerService.shared.isStreaming {
+                    pushStreamFrame(buf)
                 }
             }
         }
@@ -431,6 +438,30 @@ struct CameraPage: View {
             out = engine.filterEngine.applyFilter(data, preset: engine.filterEngine.activeFilter) ?? data
         }
         lastPhoto = out
+        WidgetBridge.publish(
+            shotCount: CameraEngine.mediaFileCount(),
+            lastShot: Date(),
+            note: "刚拍"
+        )
         showShareSheet = true
+    }
+
+    // MARK: IP 推流帧泵（节流 ~12fps，BGRA→JPEG 后台转码）
+
+    private static let streamCI = CIContext()
+    private static let streamQueue = DispatchQueue(label: "camera.ipstream")
+    @State private var lastStreamPush: Double = 0
+
+    private func pushStreamFrame(_ sample: CMSampleBuffer) {
+        let now = CACurrentMediaTime()
+        guard now - lastStreamPush > 0.08 else { return }
+        lastStreamPush = now
+        guard let pb = CVPixelBufferGetPixelBufferFromSampleBuffer(sample) else { return }
+        Self.streamQueue.async {
+            let ci = CIImage(cvPixelBuffer: pb)
+            guard let cg = Self.streamCI.createCGImage(ci, from: ci.extent) else { return }
+            guard let jpeg = UIImage(cgImage: cg).jpegData(compressionQuality: 0.7) else { return }
+            IPStreamerService.shared.pushFrame(jpeg)
+        }
     }
 }

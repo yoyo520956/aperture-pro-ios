@@ -2,16 +2,15 @@ import AVFoundation
 import CoreGraphics
 import UIKit
 
-/// 全景引擎：横滑相机时连续抓帧，按 25% 重叠交叉淡化横向拼接
+/// 全景引擎：横滑相机时连续抓帧，逐对实测重叠宽度（降采样灰度边缘相关），
+/// 按实测接缝做水平渐变融合横向拼接
 final class PanoramaEngine {
     private var frames: [CGImage] = []
     private let ciContext = CIContext()
     let targetCount = 12
-    private let overlapRatio: CGFloat = 0.25
     private let maxFrameHeight: CGFloat = 900
 
     var isCollecting: Bool { frames.count < targetCount }
-
     var capturedCount: Int { frames.count }
 
     func reset() {
@@ -23,7 +22,7 @@ final class PanoramaEngine {
         guard frames.count < targetCount else { return }
         let ci = CIImage(cvPixelBuffer: buffer)
         guard let cg = ciContext.createCGImage(ci, from: ci.extent) else { return }
-        let scale = min(1, maxFrameHeight / CGFloat(ci.extent.height))
+        let scale = min(1, maxFrameHeight / CGFloat(cg.height))
         let targetW = Int(CGFloat(cg.width) * scale)
         let targetH = Int(CGFloat(cg.height) * scale)
         let cropRect = CGRect(x: 0, y: 0, width: targetW, height: targetH)
@@ -37,28 +36,115 @@ final class PanoramaEngine {
     /// 横向拼接成全景长图
     func stitch() -> Data? {
         guard frames.count >= 4 else { return nil }
-        let w = frames[0].width
         let h = frames[0].height
-        let step = Int(CGFloat(w) * (1 - overlapRatio))
-        let totalW = step * (frames.count - 1) + w
-        let overlapW = w - step
+        let w0 = frames[0].width
 
+        // 1) 逐对实测重叠宽度（像素）
+        var overlaps: [Int] = []
+        for i in 1..<frames.count {
+            let ov = measureOverlap(frames[i - 1], frames[i], frameWidth: w0)
+            overlaps.append(ov)
+        }
+
+        // 2) 计算每张图的 x 偏移与总宽
+        var offsets: [Int] = [0]
+        var x = 0
+        for i in 1..<frames.count {
+            let ov = overlaps[i - 1]
+            x += frames[i - 1].width - ov
+            offsets.append(x)
+        }
+        let totalW = offsets.last! + frames.last!.width
+        guard totalW > 0 else { return nil }
+
+        // 3) 融合绘制：接缝处用渐变蒙版消缝
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: totalW, height: h))
         let ui = renderer.image { ctx in
             let cg = ctx.cgContext
-            if let first = frames.first {
-                cg.draw(first, in: CGRect(x: 0, y: 0, width: w, height: h))
-            }
+            guard let first = frames.first else { return }
+            cg.draw(first, in: CGRect(x: 0, y: 0, width: first.width, height: h))
             for i in 1..<frames.count {
                 let img = frames[i]
-                guard let mask = gradientMask(width: w, height: h, overlapWidth: overlapW) else { continue }
+                let ov = overlaps[i - 1]
+                let blendW = max(ov, 8)
+                guard let mask = gradientMask(width: img.width, height: h, overlapWidth: blendW) else { continue }
                 cg.saveGState()
                 cg.clip(to: mask, mask: nil, options: .premultipliedLast, operation: .copy)
-                cg.draw(img, in: CGRect(x: i * step, y: 0, width: w, height: h))
+                cg.draw(img, in: CGRect(x: offsets[i], y: 0, width: img.width, height: h))
                 cg.restoreGState()
             }
         }
         return ui.jpegData(compressionQuality: 0.9)
+    }
+
+    // MARK: - 重叠实测（降采样灰度 + 逐行边缘归一化相关）
+
+    private static let matchHeight = 120
+
+    /// 返回两帧间的重叠宽度（0...min(wA,wB)），失败时回退固定 25%
+    private func measureOverlap(_ a: CGImage, _ b: CGImage, frameWidth: Int) -> Int {
+        let w = min(a.width, b.width)
+        guard w > 64 else { return Int(CGFloat(w) * 0.25) }
+        guard let ga = grayscale(a, targetWidth: w, targetHeight: Self.matchHeight),
+              let gb = grayscale(b, targetWidth: w, targetHeight: Self.matchHeight)
+        else {
+            return Int(CGFloat(w) * 0.25)
+        }
+        let h = Self.matchHeight
+        var bestScore = -1.0
+        var bestOV = Int(CGFloat(w) * 0.25)
+        // 候选重叠：20%...60%，步进 2%
+        let lo = Int(CGFloat(w) * 0.20)
+        let hi = Int(CGFloat(w) * 0.60)
+        let step = max(4, w / 50)
+        var ov = lo
+        while ov < hi {
+            var sumD: Double = 0
+            var n: Double = 0
+            for row in Swift.stride(from: 0, to: h, by: 4) {
+                // A 的右边缘列 [w-ov, w) 对应 B 的左边缘列 [0, ov)
+                for col in Swift.stride(from: 0, to: ov, by: 4) {
+                    let va = ga[row * w + (w - ov + col)]
+                    let vb = gb[row * w + col]
+                    sumD += Double(abs(Int32(va) - Int32(vb)))
+                    n += 1
+                }
+            }
+            guard n > 0 else { continue }
+            let score = sumD / n // 越小越好
+            if score < bestScore {
+                bestScore = score
+                bestOV = ov
+            }
+            ov += step
+        }
+        return bestOV
+    }
+
+    /// 降采样到 (targetWidth x matchHeight) 的单通道灰度（取 R 通道）
+    private func grayscale(_ image: CGImage, targetWidth: Int, targetHeight: Int) -> [UInt8]? {
+        let w = targetWidth
+        let h = targetHeight
+        guard let ctx = CGContext(
+            data: nil,
+            width: w,
+            height: h,
+            bitsPerComponent: 8,
+            bytesPerRow: w * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.interpolationQuality = .low
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let data = ctx.data else { return nil }
+        let ptr = data.assumingMemoryBound(to: UInt8.self)
+        var out = [UInt8](repeating: 0, count: w * h)
+        for row in 0..<h {
+            for col in 0..<w {
+                out[row * w + col] = ptr[(row * w + col) * 4]
+            }
+        }
+        return out
     }
 
     /// 左侧重叠区黑→白渐变蒙版（黑=透 白=实）
