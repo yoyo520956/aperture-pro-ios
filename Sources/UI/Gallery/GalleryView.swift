@@ -139,7 +139,8 @@ struct MediaStore: ObservableObject {
 
     func load() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let mediaDir = docs.appendingPathComponent("Media", isDirectory: true)
+        let mediaDir = docs
+                    .appendingPathComponent("Media", isDirectory: true)
         do {
             let files = try FileManager.default.contentsOfDirectory(at: mediaDir, includingPropertiesForKeys: [.creationDateKey, .fileSizeKey])
             items = files.compactMap { url in
