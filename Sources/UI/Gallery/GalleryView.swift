@@ -39,7 +39,6 @@ struct GalleryView: View {
                 }
             }
             .navigationTitle("相册")
-            .navigationSubtitle("\(store.items.count) 项")
         }
         .sheet(isPresented: $showDetail) {
             if let item = selectedMedia {
@@ -134,27 +133,41 @@ struct MediaDetailView: View {
     }
 }
 
-struct MediaStore: ObservableObject {
+@MainActor
+class MediaStore: ObservableObject {
     @Published var items: [MediaItem] = []
 
     func load() {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let mediaDir = docs
-                    .appendingPathComponent("Media", isDirectory: true)
+        let docs = FileManager.default
+            .urls(for: .documentDirectory, in: .userDomainMask).first!
+        let mediaDir = docs.appendingPathComponent("Media", isDirectory: true)
         do {
-            let files = try FileManager.default.contentsOfDirectory(at: mediaDir, includingPropertiesForKeys: [.creationDateKey, .fileSizeKey])
-            items = files.compactMap { url in
+            let files = try FileManager.default.contentsOfDirectory(
+                at: mediaDir,
+                includingPropertiesForKeys: [.creationDateKey, .fileSizeKey]
+            )
+            var newItems: [MediaItem] = []
+            for url in files {
                 let ext = url.pathExtension
                 if ext == "jpg" || ext == "jpeg" || ext == "png" {
                     let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
                     let size = (attrs?[.size] as? Int64) ?? 0
-                    return MediaItem(kind: .photo, filename: url.lastPathComponent, fileSize: size ?? 0)
+                    let item = MediaItem(
+                        kind: .photo,
+                        filename: url.lastPathComponent,
+                        fileSize: size ?? 0
+                    )
+                    newItems.append(item)
                 } else if ext == "mov" || ext == "mp4" {
-                    return MediaItem(kind: .video, filename: url.lastPathComponent)
+                    let item = MediaItem(
+                        kind: .video,
+                        filename: url.lastPathComponent
+                    )
+                    newItems.append(item)
                 }
-                return nil
             }
-            items.sort { $0.date > $1.date }
+            newItems.sort { $0.date > $1.date }
+            items = newItems
         } catch {
             items = []
         }
