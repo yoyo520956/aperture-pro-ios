@@ -148,6 +148,6 @@ extension CameraScannerViewController: AVCaptureMetadataOutputObjectsDelegate {
             { $0 as? AVMetadataMachineReadableCodeObject }
         ).first,
               let value = obj.stringValue else { return }
-        onDetected?(value, obj.symbology)
+        onDetected?(value, String(obj.type.rawValue))
     }
 }

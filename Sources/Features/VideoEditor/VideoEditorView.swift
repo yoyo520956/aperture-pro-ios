@@ -24,7 +24,7 @@ enum VideoFilter: String, CaseIterable, Identifiable {
 }
 
 struct VideoEditorView: View {
-    @State private var pickerItem: PHPickerResult?
+    @State private var pickerItem: PhotosPickerItem?
     @State private var assetURL: URL?
     @State private var speed: Float = 1.0
     @State private var muted: Bool = false
@@ -48,7 +48,6 @@ struct VideoEditorView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 16) {
-                if assetURL != nil {
                 playerArea
                 if multiMode && !segments.isEmpty {
                     multiList
@@ -71,6 +70,7 @@ struct VideoEditorView: View {
                 .frame(height: 220)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .id(url)
+            controlGrid
         } else {
             VStack(spacing: 12) {
                 Image(systemName: "film")
@@ -118,7 +118,7 @@ struct VideoEditorView: View {
         }
     }
 
-    private func handlePicked(_ item: PHPickerResult?) {
+    private func handlePicked(_ item: PhotosPickerItem?) {
         guard let item else { return }
         Task {
             if let data = try? await item.loadTransferable(type: Data.self) {
@@ -244,9 +244,9 @@ struct VideoEditorView: View {
         }
     }
 
-    @State private var addPicker: [PHPickerResult] = []
+    @State private var addPicker: [PhotosPickerItem] = []
 
-    private func addSegments(_ items: [PHPickerResult]) async {
+    private func addSegments(_ items: [PhotosPickerItem]) async {
         for item in items {
             if let data = try? await item.loadTransferable(type: Data.self) {
                 let url = FileManager.default.temporaryDirectory
@@ -260,8 +260,8 @@ struct VideoEditorView: View {
 
     private func segRow(seg: Binding<SegRow>) -> some View {
         VStack(spacing: 8) {
-            segRowHead(seg)
-            segRowTails(seg)
+            segRowHead(seg: seg)
+            segRowTails(seg: seg)
         }
         .padding(10)
         .background(Color.gray.opacity(0.05))
@@ -289,7 +289,6 @@ struct VideoEditorView: View {
                 }
             }
         }
-    }
 
     private func segRowTails(seg: Binding<SegRow>) -> some View {
         HStack(spacing: 8) {

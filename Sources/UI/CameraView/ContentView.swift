@@ -108,7 +108,7 @@ struct CameraPage: View {
                 PanoramaView(engine: engine)
             }
             if let countdown {
-                timerOverlay(countdown)
+                timerOverlay
             }
             VStack {
                 topControls

@@ -45,7 +45,7 @@ enum LongImageStitcher {
                 let startX = y - CGFloat(ov)
                 if ov > 4 {
                     // 渐变蒙版：新图顶部 ov 像素 从透 → 实，接缝处混合新旧
-                    if let mask = seamMask(width: normW, height: h, overlap: ov) {
+                    if let mask = seamMask(width: normW, height: Int(h), overlap: ov) {
                         ctx.cgContext.saveGState()
                         ctx.cgContext.clip(to: mask, mask: nil, options: .premultipliedLast, operation: .copy)
                         img.draw(in: CGRect(x: 0, y: startX, width: normW, height: h))
@@ -147,7 +147,7 @@ enum LongImageStitcher {
         let h = img.size.height / img.size.width * CGFloat(targetW)
         return UIGraphicsImageRenderer(
             size: CGSize(width: CGFloat(targetW), height: h)
-        ).image {
+        ).image { ctx in
             img.draw(in: CGRect(x: 0, y: 0, width: CGFloat(targetW), height: h))
         }
     }

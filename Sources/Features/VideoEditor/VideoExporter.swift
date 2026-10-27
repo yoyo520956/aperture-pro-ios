@@ -16,7 +16,7 @@ enum VideoExporter {
         var temps: [URL] = []
         let stagedURL: URL
         if let name = filter.ciFilter {
-            guard let staged = renderFiltered(source, ciFilterName: name) else {
+            guard let staged = await renderFiltered(source, ciFilterName: name) else {
                 return false
             }
             temps.append(staged)
@@ -148,7 +148,7 @@ enum VideoExporter {
 
     // MARK: - 滤镜离线渲染（顺序读写，不做随机 seek）
 
-    private static func renderFiltered(_ source: URL, ciFilterName: String) -> URL? {
+    private static func renderFiltered(_ source: URL, ciFilterName: String) async -> URL? {
         let asset = AVURLAsset(url: source)
         guard let track = asset.tracks(withMediaType: .video).first else { return nil }
 
@@ -237,7 +237,7 @@ enum VideoExporter {
         }
 
         writerInput.markAsFinished()
-        writer.finishWriting()
+        await writer.finishWriting()
 
         guard writer.status == .completed,
               FileManager.default.fileExists(atPath: outURL.path) else {
@@ -279,7 +279,7 @@ enum VideoExporter {
         var finals: [URL] = []
         for seg in segments {
             if let name = seg.filter.ciFilter {
-                guard let st = renderFiltered(seg.url, ciFilterName: name) else { return false }
+                guard let st = await renderFiltered(seg.url, ciFilterName: name) else { return false }
                 temps.append(st)
                 finals.append(st)
             } else {

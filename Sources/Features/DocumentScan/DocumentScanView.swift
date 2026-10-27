@@ -161,8 +161,9 @@ struct DocCamera: UIViewControllerRepresentable {
 
         func documentCameraViewController(_ controller: VNDocumentCameraViewController,
                                           didFinishWith scan: VNDocumentCameraScan) {
-            guard scan.pageCount > 0, let ci = scan.image(ofPageAt: 0) else { return }
-            parent.onDocument(ci.cgImage ?? ci)
+            guard scan.pageCount > 0,
+                  let page = scan.imageOfPage(at: 0) else { return }
+            parent.onDocument(page)
         }
 
         func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {

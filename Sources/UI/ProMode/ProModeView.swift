@@ -51,7 +51,8 @@ class ProController: ObservableObject {
 
             // ---- 白平衡：手动 = 锁定当前；自动 = 连续白平衡 ----
             if !autoOn, device.isWhiteBalanceModeSupported(.locked) {
-                device.setWhiteBalanceModeLocked(completionHandler: nil)
+                let wb = AVCaptureDevice.WhiteBalanceTemperatureAndTintValues(temperature: 5500, tint: 0)
+                device.setWhiteBalanceModeLocked(with: wb, completionHandler: nil)
             } else if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
                 device.whiteBalanceMode = .continuousAutoWhiteBalance
             }
