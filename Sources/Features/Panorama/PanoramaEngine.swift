@@ -76,7 +76,7 @@ final class PanoramaEngine {
                 let blendW = max(shifts[i - 1], 8)
                 guard let mask = gradientMask(width: img.width, height: h, overlapWidth: blendW) else { continue }
                 cg.saveGState()
-                cg.clip(to: CGRect(x: 0, y: 0, width: img.width, height: h), mask: mask, style: nil)
+                cg.clip(to: CGRect(x: 0, y: 0, width: img.width, height: h), mask: mask)
                 cg.draw(img, in: CGRect(x: offsets[i], y: 0, width: img.width, height: h))
                 cg.restoreGState()
             }

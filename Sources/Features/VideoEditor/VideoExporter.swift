@@ -87,7 +87,6 @@ enum VideoExporter {
 
         let composition = AVMutableVideoComposition()
         composition.renderSize = size
-        composition.frameRate = 30
         composition.instructions = [instruction]
 
         // 导出
@@ -175,7 +174,6 @@ enum VideoExporter {
             AVVideoHeightKey: h
         ]
         let writerInput = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
-        writerInput.expectsMediaDataInRealtime = false
         guard writer.canAdd(writerInput) else { return nil }
         writer.add(writerInput)
 
@@ -410,7 +408,6 @@ enum VideoExporter {
         }
         let composition = AVMutableVideoComposition()
         composition.renderSize = size
-        composition.frameRate = 30
         composition.instructions = instructions
 
         // 6) 导出（audioMix 挂在 export session 上，官方链路）

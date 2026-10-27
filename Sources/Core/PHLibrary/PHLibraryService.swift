@@ -72,7 +72,7 @@ enum PHLibraryService {
     static func systemMedia(limit: Int = 120) -> [SystemPhoto] {
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        let result = PHAsset.fetchAssets(with: options, options: nil)
+        let result = PHAsset.fetchAssets(with: .any, options: options)
         var out: [SystemPhoto] = []
         var index = 0
         while index < result.count && out.count < limit {

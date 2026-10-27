@@ -29,12 +29,14 @@ enum LongImageStitcher {
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: normW, height: totalH), format: format)
+        let renderer = UIGraphicsImageRenderer(
+            size: CGSize(width: CGFloat(normW), height: totalH), format: format
+        )
         var y: CGFloat = 0
         return renderer.image { ctx in
             ctx.cgContext.interpolationQuality = .high
             guard let first = scaled.first else { return }
-            first.draw(in: CGRect(x: 0, y: 0, width: normW, height: first.size.height))
+            first.draw(in: CGRect(x: 0, y: 0, width: CGFloat(normW), height: first.size.height))
             y = first.size.height
             for i in 1..<scaled.count {
                 let img = scaled[i]
@@ -143,8 +145,10 @@ enum LongImageStitcher {
 
     private static func scaleWidth(_ img: UIImage, _ targetW: Int) -> UIImage {
         let h = img.size.height / img.size.width * CGFloat(targetW)
-        return UIGraphicsImageRenderer(size: CGSize(width: targetW, height: h)).image {
-            img.draw(in: CGRect(x: 0, y: 0, width: targetW, height: h))
+        return UIGraphicsImageRenderer(
+            size: CGSize(width: CGFloat(targetW), height: h)
+        ).image {
+            img.draw(in: CGRect(x: 0, y: 0, width: CGFloat(targetW), height: h))
         }
     }
 

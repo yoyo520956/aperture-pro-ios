@@ -31,8 +31,11 @@ final class ICloudSyncService: ObservableObject {
         }
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: Self.bgTaskID, using: nil
-        ) { (task: BGProcessingTask) in
-            task.expirationHandler = {}
+        ) { (task: BGTask) in
+            // expirationHandler 是 BGProcessingTask 的属性，基类 BGTask 上没有
+            if let processing = task as? BGProcessingTask {
+                processing.expirationHandler = {}
+            }
             Task { @MainActor [weak self] in
                 await self?.syncAll()
                 task.setTaskCompleted(success: true)
@@ -51,7 +54,7 @@ final class ICloudSyncService: ObservableObject {
 
     func backgroundSync() {
         guard !isSyncing else { return }
-        syncAll()
+        Task { await syncAll() }
     }
 
     func foregroundFetch() {

@@ -70,7 +70,8 @@ class ARState: ObservableObject {
         var pts: [CGPoint] = []
         pts.reserveCapacity(160)
         for i in Swift.stride(from: 0, to: verts.count, by: step) {
-            guard let p = project(anchor, verts[i]) else { return }
+            guard let p = project(anchor,
+                                    SCNVector3(verts[i].x, verts[i].y, verts[i].z)) else { return }
             pts.append(p)
         }
         guard pts.count > 24 else { return }
@@ -186,7 +187,8 @@ struct ARCameraView: UIViewRepresentable {
         }
 
         func session(_ session: ARSession, didUpdate frame: ARFrame) {
-            guard let anchor = frame.faceAnchor else { return }
+            // ARFrame 无 faceAnchor 属性，从 anchors 里筛 ARFaceAnchor
+            guard let anchor = frame.anchors.compactMap({ $0 as? ARFaceAnchor }).first else { return }
             let arState = parent.arState
             // ARSession 回调在会话队列，@Published 必须回主线程
             DispatchQueue.main.async {
@@ -245,7 +247,7 @@ class ARTrackingOverlayUIView: UIView {
 
         // 面部中心：ARKit 人脸坐标系原点（鼻梁附近）→ 世界系 → 视图坐标
         guard let center = project(anchor: anchor, SCNVector3(0, 0, 0)) else { return }
-        ctx.setStrokeColor(UIColor.teal.withAlphaComponent(0.85).cgColor)
+        ctx.setStrokeColor(UIColor(red: 0.18, green: 0.74, blue: 0.80, alpha: 0.85).cgColor)
         ctx.setLineWidth(1.5)
         let arm: CGFloat = 14
         ctx.move(to: CGPoint(x: center.x - arm, y: center.y))
@@ -253,7 +255,7 @@ class ARTrackingOverlayUIView: UIView {
         ctx.move(to: CGPoint(x: center.x, y: center.y - arm))
         ctx.addLine(to: CGPoint(x: center.x, y: center.y + arm))
         ctx.strokePath()
-        ctx.setFillColor(UIColor.teal.withAlphaComponent(0.9).cgColor)
+        ctx.setFillColor(UIColor(red: 0.18, green: 0.74, blue: 0.80, alpha: 0.9).cgColor)
         ctx.fillEllipse(in: CGRect(x: center.x - 3, y: center.y - 3, width: 6, height: 6))
 
         // 面部轮廓：均匀采样网格顶点，模型空间 → 世界系 → 视图坐标投影，低透明折线
@@ -263,7 +265,8 @@ class ARTrackingOverlayUIView: UIView {
         let step = max(1, vertices.count / sampleCount)
         var pts: [CGPoint] = []
         for i in Swift.stride(from: 0, to: vertices.count, by: step) {
-            guard let p = project(anchor: anchor, vertices[i]) else { continue }
+            guard let p = project(anchor: anchor,
+                                      SCNVector3(vertices[i].x, vertices[i].y, vertices[i].z)) else { continue }
             pts.append(p)
         }
         guard pts.count > 1 else { return }

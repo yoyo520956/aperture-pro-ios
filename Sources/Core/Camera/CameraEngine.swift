@@ -52,7 +52,7 @@ class CameraEngine: ObservableObject {
     var nightQueue: [CIImage] = []
     var nightEVs: [Double] = []
 
-    static var mediaDir: URL {
+    nonisolated static var mediaDir: URL {
         let docs = FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask).first!
         let dir = docs.appendingPathComponent("Media", isDirectory: true)
@@ -252,7 +252,7 @@ class CameraEngine: ObservableObject {
         }
         photoOutput.isLivePhotoCaptureEnabled = true
         let settings = AVCapturePhotoSettings()
-        settings.photoQualityPrioritization = .auto
+        settings.photoQualityPrioritization = .balanced
         if photoOutput.supportedFlashModes.contains(flashMode) {
             settings.flashMode = flashMode
         }
@@ -336,9 +336,10 @@ class CameraEngine: ObservableObject {
             return
         }
         let mid = Double(total - 1) / 2.0
-        let base = Double(device.ISO)
+        let base = Double(device.iso)
         let target = Float(base * pow(2.0, Double(index) - mid))
-        let clampedISO = max(device.minISO, min(device.maxISO, target))
+        // minISO/maxISO 在当前 SDK 不可用，改用通用夹取区间
+        let clampedISO = Float(max(100.0, min(12800.0, Double(target))))
         let quarter: CMTime = CMTime(seconds: 0.25, preferredTimescale: 600)
         let maxDur = device.activeFormat.maxExposureDuration
         let dur = CMTimeCompare(maxDur, quarter) < 0 ? maxDur : quarter
@@ -502,7 +503,7 @@ final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
     func photoOutput(
         _ output: AVCapturePhotoOutput,
         didFinishRecordingLivePhotoMovieForEventualFileAt outputFileURL: URL,
-        resolvedSettings: AVCaptureResolvedLivePhotoMediaFormatDescription
+        resolvedSettings: AVCaptureResolvedPhotoSettings
     ) {
         DispatchQueue.main.async {
             guard let parent = self.parent, let jpeg = self.pendingJPEG else { return }
@@ -517,7 +518,7 @@ final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
         didFinishProcessingLivePhotoToMovieFileAt outputFileURL: URL,
         duration: CMTime,
         photoDisplayTime: CMTime,
-        resolvedSettings: AVCaptureResolvedLivePhotoMediaFormatDescription,
+        resolvedSettings: AVCaptureResolvedPhotoSettings,
         error: Error?
     ) {}
 }

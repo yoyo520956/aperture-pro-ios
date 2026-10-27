@@ -24,7 +24,7 @@ enum VideoFilter: String, CaseIterable, Identifiable {
 }
 
 struct VideoEditorView: View {
-    @State private var pickerItem: PHPickerItem?
+    @State private var pickerItem: PHPickerResult?
     @State private var assetURL: URL?
     @State private var speed: Float = 1.0
     @State private var muted: Bool = false
@@ -49,65 +49,83 @@ struct VideoEditorView: View {
         NavigationStack {
             VStack(spacing: 16) {
                 if assetURL != nil {
-                    VideoPlayer(player: AVPlayer(url: assetURL!))
-                        .frame(height: 220)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .id(assetURL)
-                    controlGrid
-                } else {
-                    VStack(spacing: 12) {
-                        Image(systemName: "film")
-                            .font(.system(size: 56))
-                            .foregroundStyle(.gray)
-                        Text("选择一段视频开始编辑")
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 40)
-                }
+                playerArea
                 if multiMode && !segments.isEmpty {
                     multiList
                 }
-                if let message {
-                    Label(message, systemImage: "checkmark.circle")
-                        .font(.subheadline)
-                        .foregroundStyle(Color(red: 0.24, green: 0.36, blue: 0.42))
-                }
-                if exporting {
-                    ProgressView(value: exportProgress)
-                        .padding(.horizontal, 40)
-                }
+                statusViews
             }
             .navigationTitle("视频编辑")
-            .onChange(of: pickerItem) { item in
-                guard let item else { return }
-                Task {
-                    if let data = try? await item.loadTransferable(type: Data.self) {
-                        let dir = FileManager.default.temporaryDirectory
-                        let url = dir.appendingPathComponent("vedit_src_\(UUID().uuidString).mp4")
-                        try? data.write(to: url)
-                        assetURL = url
-                    }
-                }
+            .onChange(of: pickerItem) { _, item in
+                handlePicked(item)
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if assetURL != nil {
-                    Button(multiMode ? "单段" : "多段") {
-                        multiMode.toggle()
-                        if multiMode && segments.isEmpty {
-                            seedSegments()
-                        }
-                    }
-                    .font(.system(size: 13, weight: .medium))
-                }
+        .toolbar(content: { editorToolbar })
+    }
+
+    // 拆分子表达式：避免单个 ViewBuilder 过大导致 type-check 超时
+    @ViewBuilder
+    private var playerArea: some View {
+        if let url = assetURL {
+            VideoPlayer(player: AVPlayer(url: url))
+                .frame(height: 220)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .id(url)
+        } else {
+            VStack(spacing: 12) {
+                Image(systemName: "film")
+                    .font(.system(size: 56))
+                    .foregroundStyle(.gray)
+                Text("选择一段视频开始编辑")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                if assetURL == nil {
-                    PhotosPicker("选择视频", selection: $pickerItem, matching: .movie)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 40)
+        }
+    }
+
+    @ViewBuilder
+    private var statusViews: some View {
+        if let message {
+            Label(message, systemImage: "checkmark.circle")
+                .font(.subheadline)
+                .foregroundStyle(Color(red: 0.24, green: 0.36, blue: 0.42))
+        }
+        if exporting {
+            ProgressView(value: exportProgress)
+                .padding(.horizontal, 40)
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var editorToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            if assetURL != nil {
+                Button(multiMode ? "单段" : "多段") {
+                    multiMode.toggle()
+                    if multiMode && segments.isEmpty {
+                        seedSegments()
+                    }
                 }
+                .font(.system(size: 13, weight: .medium))
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            if assetURL == nil {
+                PhotosPicker("选择视频", selection: $pickerItem, matching: .videos)
+            }
+        }
+    }
+
+    private func handlePicked(_ item: PHPickerResult?) {
+        guard let item else { return }
+        Task {
+            if let data = try? await item.loadTransferable(type: Data.self) {
+                let url = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("vedit_src_\(UUID().uuidString).mp4")
+                try? data.write(to: url)
+                assetURL = url
             }
         }
     }
@@ -214,21 +232,46 @@ struct VideoEditorView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer()
-                PhotosPicker("加片段", selection: addPicker, matching: .movie)
+                PhotosPicker("加片段", selection: $addPicker, matching: .videos)
             }
             ForEach($segments) { $seg in
                 segRow(seg: $seg)
             }
         }
         .padding(.horizontal)
+        .onChange(of: addPicker) { _, items in
+            Task { await addSegments(items) }
+        }
     }
 
-    @State private var addPicker: [PHPickerItem] = []
+    @State private var addPicker: [PHPickerResult] = []
+
+    private func addSegments(_ items: [PHPickerResult]) async {
+        for item in items {
+            if let data = try? await item.loadTransferable(type: Data.self) {
+                let url = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("vedit_seg_\(UUID().uuidString).mp4")
+                try? data.write(to: url)
+                segments.append(SegRow(url: url, duration: 10))
+            }
+        }
+        addPicker = []
+    }
 
     private func segRow(seg: Binding<SegRow>) -> some View {
         VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                if let idx = segments.firstIndex(where: { $0.id == seg.wrappedValue.id }) {
+            segRowHead(seg)
+            segRowTails(seg)
+        }
+        .padding(10)
+        .background(Color.gray.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    @ViewBuilder
+    private func segRowHead(seg: Binding<SegRow>) -> some View {
+        HStack(spacing: 8) {
+            if let idx = segments.firstIndex(where: { $0.id == seg.wrappedValue.id }) {
                     Text("#\(idx + 1)")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
@@ -245,8 +288,12 @@ struct VideoEditorView: View {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
             }
-            HStack(spacing: 8) {
-                chip(String(format: "%.1f×", seg.wrappedValue.speed),
+        }
+    }
+
+    private func segRowTails(seg: Binding<SegRow>) -> some View {
+        HStack(spacing: 8) {
+            chip(String(format: "%.1f×", seg.wrappedValue.speed),
                      selected: seg.wrappedValue.speed == 1.0) {
                     let order: [Float] = [1.0, 1.5, 2.0]
                     let cur = order.firstIndex { abs($0 - seg.wrappedValue.speed) < 0.1 } ?? 0
@@ -261,24 +308,7 @@ struct VideoEditorView: View {
                 ))
                 .font(.system(size: 11))
                 .toggleStyle(.button)
-                .labelsHidden()
-            }
-        }
-        .padding(10)
-        .background(Color.gray.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .onChange(of: addPicker) { items in
-            Task {
-                for item in items {
-                    if let data = try? await item.loadTransferable(type: Data.self) {
-                        let url = FileManager.default.temporaryDirectory
-                            .appendingPathComponent("vedit_seg_\(UUID().uuidString).mp4")
-                        try? data.write(to: url)
-                        segments.append(SegRow(url: url, duration: 10))
-                    }
-                }
-                addPicker = []
-            }
+            .labelsHidden()
         }
     }
 }

@@ -42,7 +42,6 @@ final class TimelapseEngine {
             AVVideoHeightKey: height
         ]
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
-        input.expectsMediaDataInRealtime = true
         guard w.canAdd(input) else { return }
         let poolAttrs: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
@@ -101,8 +100,8 @@ final class TimelapseEngine {
         let cg = ciContext.createCGImage(ci, from: ci.extent)
         if let cg {
             let scale = CGFloat(w) / CGFloat(cg.width)
-            let dw = Int(cg.width * scale)
-            let dh = Int(cg.height * scale)
+            let dw = Int(CGFloat(cg.width) * scale)
+            let dh = Int(CGFloat(cg.height) * scale)
             ctx.draw(cg, in: CGRect(x: 0, y: Int(h) - dh, width: dw, height: dh))
         }
         // 时间码（每秒重绘一次）

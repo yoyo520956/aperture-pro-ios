@@ -22,7 +22,7 @@ struct PanoramaView: View {
                     .frame(width: 64, height: 64)
 
                     Button {
-                        engine.onPhotoCaptured?(stitched)
+                        engine.onPhotoCaptured?(stitchedOut)
                         stitched = nil
                     } label: {
                         VStack(spacing: CNTheme.sp4) {

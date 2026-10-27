@@ -143,7 +143,6 @@ struct DocCamera: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> VNDocumentCameraViewController {
         let controller = VNDocumentCameraViewController()
         controller.delegate = context.coordinator
-        controller.userConfirmation = true
         return controller
     }
 
@@ -160,13 +159,13 @@ struct DocCamera: UIViewControllerRepresentable {
             self.parent = parent
         }
 
-        func documentCameraViewControllerDidCaptureDocument(_ controller: VNDocumentCameraViewController) {
-            if let doc = controller.document {
-                parent.onDocument(doc.cgImage)
-            }
+        func documentCameraViewController(_ controller: VNDocumentCameraViewController,
+                                          didFinishWith scan: VNDocumentCameraScan) {
+            guard scan.pageCount > 0, let ci = scan.image(ofPageAt: 0) else { return }
+            parent.onDocument(ci.cgImage ?? ci)
         }
 
-        func documentCameraViewControllerDidTapCancel(_ controller: VNDocumentCameraViewController) {
+        func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
             parent.onCancel()
         }
     }

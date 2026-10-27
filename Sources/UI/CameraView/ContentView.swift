@@ -1,4 +1,6 @@
 import SwiftUI
+import AVFoundation
+import CoreMedia
 
 // MARK: - 根视图：四个标签页 + 中式皮 + iCloud 场景联动
 

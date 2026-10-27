@@ -10,7 +10,7 @@ struct CameraPreview: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ uiView: CameraPreviewView, context: _ Context) {
+    func updateUIView(_ uiView: CameraPreviewView, context: Context) {
         if engine.isRunning {
             if let layer = uiView.previewLayer {
                 layer.session = engine.session
@@ -29,15 +29,12 @@ class CameraPreviewView: UIView {
             let layer = AVCaptureVideoPreviewLayer(session: engine.session)
             layer.videoGravity = .resizeAspectFill
             layer.frame = bounds
-            if previewLayer == nil {
-                layerLayout.layer?.removeFromSuperlayer()
-                layerLayout = layer
-                layerLayout.addSublayer(layer)
-            } else {
-                previewLayer?.removeFromSuperlayer()
-                previewLayer = layer
-                layerLayout.addSublayer(layer)
+            // 重建预览层前先清旧子层，避免层叠堆积
+            for sub in layerLayout.sublayers ?? [] {
+                sub.removeFromSuperlayer()
             }
+            previewLayer = layer
+            layerLayout.addSublayer(layer)
         }
     }
 

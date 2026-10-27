@@ -98,10 +98,8 @@ final class CameraScannerViewController: UIViewController {
         session.beginConfiguration()
         session.sessionPreset = .high
         do {
-            guard let device = AVCaptureDevice.default(for: .video),
-                  let input = try AVCaptureDeviceInput(device: device) else {
-                return
-            }
+            guard let device = AVCaptureDevice.default(for: .video) else { return }
+            let input = try AVCaptureDeviceInput(device: device)
             if session.canAddInput(input) { session.addInput(input) }
             let output = AVCaptureMetadataOutput()
             if session.canAddOutput(output) {
@@ -146,7 +144,9 @@ extension CameraScannerViewController: AVCaptureMetadataOutputObjectsDelegate {
     func metadataOutput(_ output: AVCaptureMetadataOutput,
                         didOutput metadataObjects: [AVMetadataObject],
                         from connection: AVCaptureConnection) {
-        guard let obj = metadataObjects.first?.object as? AVMetadataMachineReadableCodeObject,
+        guard let obj = metadataObjects.compactMap(
+            { $0 as? AVMetadataMachineReadableCodeObject }
+        ).first,
               let value = obj.stringValue else { return }
         onDetected?(value, obj.symbology)
     }

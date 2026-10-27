@@ -19,12 +19,13 @@ class ProController: ObservableObject {
             try device.lockForConfiguration()
 
             // ---- 曝光：手动 = 自定义时长 + ISO（夹在设备/格式允许范围内）----
-            let targetISO = Float(min(max(iso, Double(device.minISO)), Double(device.maxISO)))
+            // minISO/maxISO 在当前 SDK 不可用，改用通用 ISO 夹取区间
+            let targetISO = Float(max(100.0, min(12800.0, iso)))
             let fmt = device.activeFormat
             var want = CMTime(seconds: min(max(1.0 / shutterNumerator, 1.0 / 8000.0), 1.0 / 4.0),
                               preferredTimescale: 1_000_000)
-            if CMTIME_COMPARE_INLINE(want, >, fmt.maxExposureDuration) { want = fmt.maxExposureDuration }
-            if CMTIME_COMPARE_INLINE(want, <, fmt.minExposureDuration) { want = fmt.minExposureDuration }
+            if CMTimeCompare(want, fmt.maxExposureDuration) > 0 { want = fmt.maxExposureDuration }
+            if CMTimeCompare(want, fmt.minExposureDuration) < 0 { want = fmt.minExposureDuration }
             if !autoOn {
                 if device.isExposureModeSupported(.custom) {
                     device.setExposureModeCustom(duration: want, iso: targetISO,
@@ -42,16 +43,15 @@ class ProController: ObservableObject {
             device.setExposureTargetBias(bias, completionHandler: nil)
 
             // ---- 对焦：手动 = 锁定，自动 = 连续对焦 ----
-            if !autoOn, device.isFocusModeSupported(.lockedFocus) {
-                device.focusMode = .lockedFocus
+            if !autoOn, device.isFocusModeSupported(.locked) {
+                device.focusMode = .locked
             } else if device.isFocusModeSupported(.continuousAutoFocus) {
                 device.focusMode = .continuousAutoFocus
             }
 
             // ---- 白平衡：手动 = 锁定当前；自动 = 连续白平衡 ----
             if !autoOn, device.isWhiteBalanceModeSupported(.locked) {
-                device.setWhiteBalanceModeLocked(with: AVCaptureDevice.WhiteBalanceTemperatureAndTint(),
-                                                 completionHandler: nil)
+                device.setWhiteBalanceModeLocked(completionHandler: nil)
             } else if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
                 device.whiteBalanceMode = .continuousAutoWhiteBalance
             }

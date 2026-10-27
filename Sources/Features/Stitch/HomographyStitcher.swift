@@ -108,7 +108,7 @@ enum HomographyStitcher {
             while c < n - 4 {
                 var r = 4
                 while r < n - 4 {
-                    sum += Double(abs(Int32(ga[r * n + c]) - Int32(gb[r * n + (c - (n - ov))))))
+                    sum += Double(abs(Int32(ga[r * n + c]) - Int32(gb[r * n + (c - (n - ov))])))
                     cnt += 1
                     r += 4
                 }
@@ -184,7 +184,7 @@ enum HomographyStitcher {
                     if mag > 4 {
                         let ang = atan2(gyv, gx) + .pi / 8
                         let bin = Int((ang / (2 * .pi / 8)).rounded()) % 8
-                        let strength = mag > 24 ? 3.0 : (mag > 12 ? 2.0 : 1.0)
+                        let strength = Float(mag > 24 ? 3.0 : (mag > 12 ? 2.0 : 1.0))
                         bins[bin] += strength
                     }
                 }
@@ -298,7 +298,7 @@ enum HomographyStitcher {
             for c in 0..<8 { A[r][c] = M[r][c] }
             rhs[r] = -M[r][8]
         }
-        guard let h = gaussSolveLinear(A, rhs) else { return identityH9 }
+        guard let h = gaussSolveLinear(A, rhs) else { return [1, 0, 0, 0, 1, 0, 0, 0, 1] }
         return h + [1.0]
     }
 
