@@ -155,7 +155,7 @@ struct VideoEditorView: View {
 
     private var speedPicker: some View {
         HStack(spacing: 10) {
-            ForEach([0.5, 1.0, 2.0, 4.0], id: \.self) { s in
+            ForEach([0.5, 1.0, 2.0, 4.0] as [Float], id: \.self) { s in
                 chip(String(format: "%.1f×", s), selected: s == speed) { speed = s }
             }
         }

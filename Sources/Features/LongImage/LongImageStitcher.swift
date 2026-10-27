@@ -47,11 +47,11 @@ enum LongImageStitcher {
                     // 渐变蒙版：新图顶部 ov 像素 从透 → 实，接缝处混合新旧
                     if let mask = seamMask(width: normW, height: Int(h), overlap: ov) {
                         ctx.cgContext.saveGState()
-                        ctx.cgContext.clip(to: CGRect(x: 0, y: startX, width: normW, height: h), mask: mask)
-                        img.draw(in: CGRect(x: 0, y: startX, width: normW, height: h))
+                        ctx.cgContext.clip(to: CGRect(x: 0, y: CGFloat(startX), width: CGFloat(normW), height: h), mask: mask)
+                        img.draw(in: CGRect(x: 0, y: CGFloat(startX), width: CGFloat(normW), height: h))
                         ctx.cgContext.restoreGState()
                     } else {
-                        img.draw(in: CGRect(x: 0, y: startX, width: normW, height: h))
+                        img.draw(in: CGRect(x: 0, y: CGFloat(startX), width: CGFloat(normW), height: h))
                     }
                 } else {
                     img.draw(in: CGRect(x: 0, y: y, width: normW, height: h))
