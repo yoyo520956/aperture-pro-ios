@@ -43,7 +43,7 @@ final class TimelapseEngine {
         ]
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         input.expectsMediaDataInRealtime = true
-        guard w.canInput(input) else { return }
+        guard w.canAdd(input) else { return }
         let poolAttrs: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
             kCVPixelBufferWidthKey as String: Int(width),
@@ -60,7 +60,7 @@ final class TimelapseEngine {
         outH = Int(height)
         lastWriteTime = -1
         frameIndex = 0
-        startTime = CMAbsoluteTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()))
+        startTime = CFAbsoluteTimeGetCurrent()
         lastSecondText = ""
         lastSecondImage = nil
     }
@@ -68,12 +68,12 @@ final class TimelapseEngine {
     /// 由相机帧回调驱动，内部按 frameInterval 抽帧，pts 单调递增
     func addFrame(_ sample: CMSampleBuffer) {
         guard let writer, let adaptor, writer.status == .writing else { return }
-        guard let pb = CVPixelBufferGetPixelBufferFromSampleBuffer(sample) else { return }
-        let now = CMAbsoluteTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()))
+        guard let pb = CMSampleBufferGetImageBuffer(sample) else { return }
+        let now = CFAbsoluteTimeGetCurrent()
         guard lastWriteTime < 0 || now - lastWriteTime >= frameInterval else { return }
         lastWriteTime = now
 
-        guard adaptor.isReadyForMoreMediaData else { return }
+        guard adaptor.assetWriterInput.isReadyForMoreMediaData else { return }
         let pts = CMTime(seconds: Double(frameIndex) * frameInterval, preferredTimescale: 1_000_000)
         frameIndex += 1
 
@@ -121,9 +121,9 @@ final class TimelapseEngine {
 
     func stop() -> String? {
         guard let writer, let adaptor else { return nil }
-        adaptor.markAsFinished()
+        adaptor.assetWriterInput.markAsFinished()
         let w = writer
-        w?.finishWriting { [weak w] in
+        w.finishWriting { [weak w] in
             if let w, let err = w.error {
                 NSLog("timelapse writer error: \(err.localizedDescription)")
             }
@@ -159,7 +159,8 @@ final class TimelapseEngine {
         let ui = renderer.image { ctx in
             let cg = ctx.cgContext
             cg.setFillColor(UIColor.black.withAlphaComponent(0.45).cgColor)
-            cg.addRoundedRect(in: CGRect(x: 0, y: 0, width: imgW, height: imgH), cornerRadius: 8, transform: nil)
+            let bubble = UIBezierPath(roundedRect: CGRect(x: 0, y: 0, width: imgW, height: imgH), cornerRadius: 8)
+            cg.addPath(bubble.cgPath)
             cg.fillPath()
             str.draw(
                 in: CGRect(x: 12, y: (imgH - Int(fontSize)) / 2, width: imgW - 24, height: Int(fontSize * 1.4)),

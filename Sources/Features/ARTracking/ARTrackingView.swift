@@ -22,7 +22,7 @@ struct FaceLandmarkDot: View {
         Circle()
             .fill(
                 isActive
-                    ? Color.systemBlue.opacity(0.85)
+                    ? Color.blue.opacity(0.85)
                     : Color.gray.opacity(0.4)
             )
             .frame(width: 16, height: 16)
@@ -112,15 +112,15 @@ struct ARTrackingOverlay: View {
         let ls = arState.landmarks
         if ls.count == 4 {
             FaceLine(start: ls[0].point, end: ls[1].point)
-                .stroke(Color.systemBlue.opacity(0.6), lineWidth: 2)
+                .stroke(Color.blue.opacity(0.6), lineWidth: 2)
             FaceLine(start: ls[0].point, end: ls[2].point)
-                .stroke(Color.systemBlue.opacity(0.6), lineWidth: 2)
+                .stroke(Color.blue.opacity(0.6), lineWidth: 2)
             FaceLine(start: ls[1].point, end: ls[2].point)
-                .stroke(Color.systemBlue.opacity(0.6), lineWidth: 2)
+                .stroke(Color.blue.opacity(0.6), lineWidth: 2)
             FaceLine(start: ls[0].point, end: ls[3].point)
-                .stroke(Color.systemBlue.opacity(0.5), lineWidth: 1.5)
+                .stroke(Color.blue.opacity(0.5), lineWidth: 1.5)
             FaceLine(start: ls[1].point, end: ls[3].point)
-                .stroke(Color.systemBlue.opacity(0.5), lineWidth: 1.5)
+                .stroke(Color.blue.opacity(0.5), lineWidth: 1.5)
 
             ForEach(0..<ls.count, id: \.self) { i in
                 FaceLandmarkDot(position: ls[i].point,

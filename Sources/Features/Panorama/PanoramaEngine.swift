@@ -26,7 +26,8 @@ final class PanoramaEngine {
         let targetW = Int(CGFloat(cg.width) * scale)
         let targetH = Int(CGFloat(cg.height) * scale)
         let cropRect = CGRect(x: 0, y: 0, width: targetW, height: targetH)
-        guard let scaled = cropRect == CGRect(origin: .zero, size: cg.size)
+        let cgSize = CGSize(width: cg.width, height: cg.height)
+        guard let scaled = cropRect == CGRect(origin: .zero, size: cgSize)
             ? cg
             : cg.cropping(to: cropRect)
         else { return }
@@ -75,7 +76,7 @@ final class PanoramaEngine {
                 let blendW = max(shifts[i - 1], 8)
                 guard let mask = gradientMask(width: img.width, height: h, overlapWidth: blendW) else { continue }
                 cg.saveGState()
-                cg.clip(to: mask, mask: nil, options: .premultipliedLast, operation: .copy)
+                cg.clip(to: CGRect(x: 0, y: 0, width: img.width, height: h), mask: mask, style: nil)
                 cg.draw(img, in: CGRect(x: offsets[i], y: 0, width: img.width, height: h))
                 cg.restoreGState()
             }

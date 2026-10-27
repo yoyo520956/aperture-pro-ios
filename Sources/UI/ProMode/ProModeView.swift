@@ -2,12 +2,14 @@ import AVFoundation
 import SwiftUI
 
 /// Pro 手动控制：ISO / 快门 / 曝光补偿 / 对焦 / 白平衡
+/// 官方链路：手动曝光 setExposureModeCustom(duration:iso:)，补偿 setExposureTargetBias，
+/// 白平衡手动 = setWhiteBalanceModeLocked（锁定当前画面白平衡，K 值为取景参考）
 @MainActor
 class ProController: ObservableObject {
     @Published var iso: Double = 100
     @Published var shutterNumerator: Double = 1000
     @Published var exposureOffset: Double = 0
-    @Published var focusMode: AVDeviceFocusMode = .auto
+    @Published var focusMode: AVCaptureDevice.FocusMode = .continuousAutoFocus
     @Published var wbTemperature: Double = 5500
     @Published var autoOn: Bool = true
     @Published var hint: String = ""
@@ -15,28 +17,45 @@ class ProController: ObservableObject {
     func apply(to device: AVCaptureDevice) {
         do {
             try device.lockForConfiguration()
-            if device.isISOEnabledSupported {
-                device.isISOEnabled = true
-                device.isoSensitivity = iso
+
+            // ---- 曝光：手动 = 自定义时长 + ISO（夹在设备/格式允许范围内）----
+            let targetISO = Float(min(max(iso, Double(device.minISO)), Double(device.maxISO)))
+            let fmt = device.activeFormat
+            var want = CMTime(seconds: min(max(1.0 / shutterNumerator, 1.0 / 8000.0), 1.0 / 4.0),
+                              preferredTimescale: 1_000_000)
+            if CMTIME_COMPARE_INLINE(want, >, fmt.maxExposureDuration) { want = fmt.maxExposureDuration }
+            if CMTIME_COMPARE_INLINE(want, <, fmt.minExposureDuration) { want = fmt.minExposureDuration }
+            if !autoOn {
+                if device.isExposureModeSupported(.custom) {
+                    device.setExposureModeCustom(duration: want, iso: targetISO,
+                                                 completionHandler: nil)
+                }
+            } else if device.isExposureModeSupported(.continuousAutoExposure) {
+                device.exposurePointOfInterest = CGPoint(x: 0.5, y: 0.5)
+                device.exposureMode = .continuousAutoExposure
             }
-            if device.isExposureDurationSupported, !autoOn {
-                let lo = Double(device.minExposureDuration)
-                let hi = Double(device.maxExposureDuration)
-                let shutter = min(max(1.0 / shutterNumerator, lo), hi)
-                device.exposureDuration = CMTime(seconds: shutter, preferredTimescale: 1_000_000)
+
+            // ---- 曝光补偿（bias，钳到设备范围）----
+            let bias = Float(min(max(exposureOffset,
+                                     Double(device.minExposureTargetBias)),
+                                 Double(device.maxExposureTargetBias)))
+            device.setExposureTargetBias(bias, completionHandler: nil)
+
+            // ---- 对焦：手动 = 锁定，自动 = 连续对焦 ----
+            if !autoOn, device.isFocusModeSupported(.lockedFocus) {
+                device.focusMode = .lockedFocus
+            } else if device.isFocusModeSupported(.continuousAutoFocus) {
+                device.focusMode = .continuousAutoFocus
             }
-            if device.isExposureTargetOffsetSupported {
-                device.exposureTargetOffset = exposureOffset
+
+            // ---- 白平衡：手动 = 锁定当前；自动 = 连续白平衡 ----
+            if !autoOn, device.isWhiteBalanceModeSupported(.locked) {
+                device.setWhiteBalanceModeLocked(with: AVCaptureDevice.WhiteBalanceTemperatureAndTint(),
+                                                 completionHandler: nil)
+            } else if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+                device.whiteBalanceMode = .continuousAutoWhiteBalance
             }
-            if !autoOn, device.isFocusModeSupported(.fixed) {
-                device.focusMode = .fixed
-            } else {
-                device.focusMode = focusMode
-            }
-            if device.isWhiteBalanceTemperatureAndTintSupported {
-                device.isLockedForWhiteBalance = false
-                device.whiteBalanceTemperature = wbTemperature
-            }
+
             device.unlockForConfiguration()
             hint = ""
         } catch {
@@ -55,7 +74,7 @@ struct ProModeView: View {
             if !pro.hint.isEmpty {
                 Text(pro.hint)
                     .font(CNTheme.f12)
-                    .foregroundStyle(Color(CNTheme.cinnabar))
+                    .foregroundStyle(CNTheme.cinnabar)
             }
             sliderRow(title: "ISO", value: $pro.iso, range: 50...3200, step: 25)
             sliderRow(title: "快门 1/\(Int(pro.shutterNumerator))s",
@@ -75,7 +94,7 @@ struct ProModeView: View {
                 .buttonStyle(.bordered)
                 Text("ISO \(Int(pro.iso)) · 1/\(Int(pro.shutterNumerator))s")
                     .font(CNTheme.f12)
-                    .foregroundStyle(Color(CNTheme.inkSub))
+                    .foregroundStyle(CNTheme.inkSub)
             }
             Spacer()
         }
@@ -86,23 +105,23 @@ struct ProModeView: View {
         HStack {
             Text("Pro 手动")
                 .font(CNTheme.f22)
-                .foregroundStyle(Color(CNTheme.ink))
+                .foregroundStyle(CNTheme.ink)
             Spacer()
             Text("轻调 · 藏而不露")
                 .font(CNTheme.f12)
-                .foregroundStyle(Color(CNTheme.inkFaint))
+                .foregroundStyle(CNTheme.inkFaint)
         }
     }
 
-    private func sliderRow(title: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double) -> some View {
+    private func sliderRow(title: String, value: Binding<Double>,
+                           range: ClosedRange<Double>, step: Double) -> some View {
         VStack(alignment: .leading, spacing: CNTheme.sp4) {
             Text(title)
                 .font(CNTheme.f14)
-                .foregroundStyle(Color(CNTheme.ink))
-            Slider(value: value, in: range, step: step) {
-                pro.apply(to: device)
-            }
-            .tint(Color(CNTheme.indigo))
+                .foregroundStyle(CNTheme.ink)
+            Slider(value: value, in: range, step: step,
+                   onEditingChanged: { _ in pro.apply(to: device) })
+                .tint(CNTheme.indigo)
         }
     }
 }

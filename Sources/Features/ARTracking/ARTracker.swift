@@ -1,9 +1,10 @@
 // ARTracker.swift
-// 面部追踪 AR 会话管理器
+// 面部追踪 AR 会话管理器（纯 ARKit：ARSCNView + ARFaceGeometry + projectPoint）
 // iOS 16+ / Swift 5.9 + SwiftUI + ARKit
 
 import ARKit
 import QuartzCore
+import SceneKit
 import SwiftUI
 
 // MARK: - Face Landmark
@@ -18,7 +19,7 @@ struct FaceLandmark {
 // MARK: - AR State
 
 /// 可观察对象，持有 AR 追踪状态
-@available(iOS 13.0, *)
+@available(iOS 16.0, *)
 class ARState: ObservableObject {
     /// 是否正在追踪人脸
     @Published var isTracking: Bool = false
@@ -27,8 +28,8 @@ class ARState: ObservableObject {
     /// 最近错误信息
     @Published var errorMessage: String? = nil
 
-    /// 弱引用 ARView，顶点投影用（模型空间 → 视图坐标）
-    weak var arView: ARView?
+    /// 弱引用 ARSCNView，顶点投影用（模型空间 → 视图坐标）
+    weak var scnView: ARSCNView?
 
     /// 面部语义角点（视图坐标）
     @Published var landmarks: [FaceLandmark] = []
@@ -36,11 +37,28 @@ class ARState: ObservableObject {
     /// 上次角点更新时间（节流 ~20Hz，避免每帧刷 SwiftUI）
     private var lastLandmarkUpdate: CFTimeInterval = 0
 
-    /// 由 ARFaceAnchor.mesh 顶点投影点云估计 4 个语义角点
-    /// 采样网格顶点 → ARView.project 投到视图坐标 → 按包围盒相对高度切行带聚类
+    /// 模型系顶点 → 世界系（anchor.transform × 局部点）
+    private func worldPoint(_ anchor: ARFaceAnchor, _ v: SCNVector3) -> SCNVector3 {
+        let t = anchor.transform
+        let x = t.columns.0.x * v.x + t.columns.1.x * v.y + t.columns.2.x * v.z + t.columns.3.x
+        let y = t.columns.0.y * v.x + t.columns.1.y * v.y + t.columns.2.y * v.z + t.columns.3.y
+        let z = t.columns.0.z * v.x + t.columns.1.z * v.y + t.columns.2.z * v.z + t.columns.3.z
+        return SCNVector3(x, y, z)
+    }
+
+    /// 世界系 → 视图坐标（projectPoint 给左下原点，翻转为 SwiftUI 左上原点）
+    private func project(_ anchor: ARFaceAnchor, _ v: SCNVector3) -> CGPoint? {
+        guard let view = scnView else { return nil }
+        let p = view.projectPoint(worldPoint(anchor, v))
+        return CGPoint(x: CGFloat(p.x), y: view.bounds.height - CGFloat(p.y))
+    }
+
+    /// 由 ARFaceAnchor.geometry 顶点投影点云估计 4 个语义角点
+    /// 采样网格顶点 → projectPoint 投到视图坐标 → 按包围盒相对高度切行带聚类
     func updateLandmarks(for anchor: ARFaceAnchor) {
-        guard let view = arView else { return }
-        guard let mesh = anchor.mesh, let verts = mesh.vertices, verts.count >= 512 else {
+        guard scnView != nil else { return }
+        let verts = anchor.geometry.vertices
+        guard verts.count >= 128 else {
             landmarks = []
             return
         }
@@ -52,8 +70,8 @@ class ARState: ObservableObject {
         var pts: [CGPoint] = []
         pts.reserveCapacity(160)
         for i in Swift.stride(from: 0, to: verts.count, by: step) {
-            let world = anchor.transform.act(verts[i])
-            pts.append(view.project(world, cameraTransform: .identity, relativeTo: .identity))
+            guard let p = project(anchor, verts[i]) else { return }
+            pts.append(p)
         }
         guard pts.count > 24 else { return }
 
@@ -109,19 +127,19 @@ class ARState: ObservableObject {
         return s[s.count / 2]
     }
 
-    /// 切换追踪开关
+    /// 切换追踪开关（官方配置：ARFaceTrackingConfiguration）
     func toggleTracking(with session: ARSession) {
         isTracking.toggle()
         if isTracking {
-            let config = ARFaceConfiguration()
-            config.lightEstimationEnabled = true
-            do {
-                try session.run(config, options: [.resetTracking, .removeExistingAnchors])
-                errorMessage = nil
-            } catch {
+            guard ARFaceTrackingConfiguration.isSupported else {
                 isTracking = false
-                errorMessage = "启动 AR 追踪失败：\(error.localizedDescription)"
+                errorMessage = "此设备不支持面部追踪（需要原深感摄像头）"
+                return
             }
+            let config = ARFaceTrackingConfiguration()
+            config.isLightEstimationEnabled = true
+            session.run(config, options: [.resetTracking, .removeExistingAnchors])
+            errorMessage = nil
         } else {
             session.pause()
         }
@@ -135,21 +153,24 @@ class ARState: ObservableObject {
 
 // MARK: - AR Camera View
 
-/// UIViewRepresentable：显示 ARKit 相机画面
-@available(iOS 13.0, *)
+/// UIViewRepresentable：显示 ARKit 相机画面（ARSCNView，纯 ARKit 无 RealityKit 依赖）
+@available(iOS 16.0, *)
 struct ARCameraView: UIViewRepresentable {
     let arState: ARState
     let session: ARSession
 
-    func makeUIView(context: Context) -> ARView {
-        let arView = ARView(frame: .zero)
-        arView.session = session
-        arView.session.delegate = context.coordinator
-        arState.arView = arView
-        return arView
+    func makeUIView(context: Context) -> ARSCNView {
+        let scnView = ARSCNView(frame: .zero)
+        scnView.session = session
+        scnView.automaticallyUpdatesLighting = true
+        scnView.session.delegate = context.coordinator
+        arState.scnView = scnView
+        return scnView
     }
 
-    func updateUIView(_ uiView: ARView, context: Context) {}
+    func updateUIView(_ uiView: ARSCNView, context: Context) {
+        arState.scnView = uiView
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -179,7 +200,7 @@ struct ARCameraView: UIViewRepresentable {
 // MARK: - Tracking Overlay View
 
 /// 面部追踪叠加层（UIViewRepresentable）
-@available(iOS 13.0, *)
+@available(iOS 16.0, *)
 struct ARTrackingOverlayView: UIViewRepresentable {
     let arState: ARState
     let screenSize: CGSize
@@ -195,33 +216,36 @@ struct ARTrackingOverlayView: UIViewRepresentable {
 }
 
 /// 绘制面部角点的 UIView
-@available(iOS 13.0, *)
+@available(iOS 16.0, *)
 class ARTrackingOverlayUIView: UIView {
     var arState: ARState?
 
     init(screenSize: CGSize) {
-        super.init(frame: .zero)
+        super.init(frame: CGRect(origin: .zero, size: screenSize))
         self.backgroundColor = .clear
-        translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: screenSize.width),
-            heightAnchor.constraint(equalToConstant: screenSize.height)
-        ])
+        isOpaque = false
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    /// 模型系 → 世界系 → projectPoint → 左上原点视图坐标
+    private func project(anchor: ARFaceAnchor, _ v: SCNVector3) -> CGPoint? {
+        guard let view = arState?.scnView else { return nil }
+        let t = anchor.transform
+        let x = t.columns.0.x * v.x + t.columns.1.x * v.y + t.columns.2.x * v.z + t.columns.3.x
+        let y = t.columns.0.y * v.x + t.columns.1.y * v.y + t.columns.2.y * v.z + t.columns.3.y
+        let z = t.columns.0.z * v.x + t.columns.1.z * v.y + t.columns.2.z * v.z + t.columns.3.z
+        let p = view.projectPoint(SCNVector3(x, y, z))
+        return CGPoint(x: CGFloat(p.x), y: view.bounds.height - CGFloat(p.y))
+    }
+
     override func draw(_ rect: CGRect) {
-        guard let arState, let anchor = arState.faceAnchor, let view = arState.arView else { return }
+        guard let arState, let anchor = arState.faceAnchor else { return }
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
 
         // 面部中心：ARKit 人脸坐标系原点（鼻梁附近）→ 世界系 → 视图坐标
-        let center = view.project(
-            anchor.transform.act(simd_float3(0, 0, 0)),
-            cameraTransform: .identity,
-            relativeTo: .identity
-        )
-        ctx.setStrokeColor(UIColor.systemTeal.withAlphaComponent(0.85).cgColor)
+        guard let center = project(anchor: anchor, SCNVector3(0, 0, 0)) else { return }
+        ctx.setStrokeColor(UIColor.teal.withAlphaComponent(0.85).cgColor)
         ctx.setLineWidth(1.5)
         let arm: CGFloat = 14
         ctx.move(to: CGPoint(x: center.x - arm, y: center.y))
@@ -229,22 +253,21 @@ class ARTrackingOverlayUIView: UIView {
         ctx.move(to: CGPoint(x: center.x, y: center.y - arm))
         ctx.addLine(to: CGPoint(x: center.x, y: center.y + arm))
         ctx.strokePath()
-        ctx.setFillColor(UIColor.systemTeal.withAlphaComponent(0.9).cgColor)
+        ctx.setFillColor(UIColor.teal.withAlphaComponent(0.9).cgColor)
         ctx.fillEllipse(in: CGRect(x: center.x - 3, y: center.y - 3, width: 6, height: 6))
 
         // 面部轮廓：均匀采样网格顶点，模型空间 → 世界系 → 视图坐标投影，低透明折线
-        guard let mesh = anchor.mesh, let vertices = mesh.vertices, vertices.count > 128 else { return }
+        let vertices = anchor.geometry.vertices
+        guard vertices.count > 128 else { return }
         let sampleCount = 96
         let step = max(1, vertices.count / sampleCount)
         var pts: [CGPoint] = []
         for i in Swift.stride(from: 0, to: vertices.count, by: step) {
-            let worldPoint = anchor.transform.act(vertices[i])
-            pts.append(view.project(worldPoint,
-                                    cameraTransform: .identity,
-                                    relativeTo: .identity))
+            guard let p = project(anchor: anchor, vertices[i]) else { continue }
+            pts.append(p)
         }
         guard pts.count > 1 else { return }
-        ctx.setStrokeColor(UIColor.systemBlue.withAlphaComponent(0.55).cgColor)
+        ctx.setStrokeColor(UIColor.blue.withAlphaComponent(0.55).cgColor)
         ctx.setLineWidth(1.2)
         for i in 0..<(pts.count - 1) {
             ctx.move(to: pts[i])
@@ -263,7 +286,7 @@ class ARTrackingOverlayUIView: UIView {
 /// let state = ARState()
 /// ARTrackingView(arState: state)
 /// ```
-@available(iOS 13.0, *)
+@available(iOS 16.0, *)
 struct ARTrackingView: View {
     @StateObject private var arState: ARState
     let session: ARSession
@@ -352,7 +375,7 @@ struct ARTrackingView: View {
 // MARK: - Preview
 
 #if DEBUG
-@available(iOS 13.0, *)
+@available(iOS 16.0, *)
 struct ARTrackingView_Previews: PreviewProvider {
     static var previews: some View {
         ARTrackingView()

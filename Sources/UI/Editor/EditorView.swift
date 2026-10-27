@@ -32,7 +32,7 @@ struct EditorView: View {
                 if !note.isEmpty {
                     Text(note)
                         .font(CNTheme.f12)
-                        .foregroundStyle(Color(CNTheme.inkFaint))
+                        .foregroundStyle(CNTheme.inkFaint)
                 }
             }
             .padding(CNTheme.sp16)
@@ -54,10 +54,10 @@ struct EditorView: View {
                 VStack(spacing: CNTheme.sp8) {
                     Image(systemName: "photo.on.rectangle.angled")
                         .font(.system(size: 44, weight: .ultraLight))
-                        .foregroundStyle(Color(CNTheme.inkFaint))
+                        .foregroundStyle(CNTheme.inkFaint)
                     Text("选一张照片")
                         .font(CNTheme.f15)
-                        .foregroundStyle(Color(CNTheme.inkSub))
+                        .foregroundStyle(CNTheme.inkSub)
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 300)
@@ -73,7 +73,7 @@ struct EditorView: View {
                     .font(CNTheme.f14)
             }
             .buttonStyle(.bordered)
-            .tint(Color(CNTheme.indigo))
+            .tint(CNTheme.indigo)
             .onChange(of: selection) { item in
                 Task { @MainActor in
                     if let data = try? await item?.loadTransferable(type: Data.self),
@@ -92,7 +92,7 @@ struct EditorView: View {
                         render()
                     }
                     .buttonStyle(.bordered)
-                    .tint(cropAspect == a ? Color(CNTheme.indigo) : Color(CNTheme.inkFaint))
+                    .tint(cropAspect == a ? CNTheme.indigo : CNTheme.inkFaint)
                 }
                 Button {
                     rotation = (rotation + 90) % 360
@@ -101,7 +101,7 @@ struct EditorView: View {
                     Label("旋转", systemImage: "arrow.right.arrow.left")
                 }
                 .buttonStyle(.bordered)
-                .tint(Color(CNTheme.inkSub))
+                .tint(CNTheme.inkSub)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -126,7 +126,7 @@ struct EditorView: View {
                 } label: {
                     Text("重置").font(CNTheme.f14)
                 }
-                .tint(Color(CNTheme.inkSub))
+                .tint(CNTheme.inkSub)
                 Spacer()
                 Button {
                     save()
@@ -136,7 +136,7 @@ struct EditorView: View {
                         .fontWeight(.medium)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Color(CNTheme.cinnabar))
+                .tint(CNTheme.cinnabar)
                 .disabled(output == nil)
             }
         }
@@ -146,12 +146,12 @@ struct EditorView: View {
         HStack {
             Text(title)
                 .font(CNTheme.f12)
-                .foregroundStyle(Color(CNTheme.inkSub))
+                .foregroundStyle(CNTheme.inkSub)
                 .frame(width: 36, alignment: .leading)
             Slider(value: value, in: range) { editing in
                 if !editing { render() }
             }
-            .tint(Color(CNTheme.indigo))
+            .tint(CNTheme.indigo)
         }
     }
 
@@ -166,7 +166,7 @@ struct EditorView: View {
     }
 
     private func save() {
-        guard let output, let data = output.jpegData(compressionQuality: 0.92) else {
+        guard let snapshot = output, let data = snapshot.jpegData(compressionQuality: 0.92) else {
             note = "保存失败"
             return
         }
@@ -253,11 +253,11 @@ struct FilterChip: View {
             .padding(.horizontal, CNTheme.sp12)
             .padding(.vertical, 6)
             .background(
-                Capsule().fill(isActive ? Color(CNTheme.cinnabar) : Color(CNTheme.paperDeep))
+                Capsule().fill(isActive ? CNTheme.cinnabar : CNTheme.paperDeep)
             )
-            .foregroundStyle(isActive ? .white : Color(CNTheme.inkSub))
+            .foregroundStyle(isActive ? .white : CNTheme.inkSub)
             .overlay(
-                Capsule().stroke(isActive ? Color.clear : Color(CNTheme.line), lineWidth: 1)
+                Capsule().stroke(isActive ? Color.clear : CNTheme.line, lineWidth: 1)
             )
     }
 }

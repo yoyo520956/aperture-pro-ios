@@ -1,8 +1,4 @@
 import SwiftUI
-import UIKit
-import AVFoundation
-import CoreImage
-import QuartzCore
 
 // MARK: - 根视图：四个标签页 + 中式皮 + iCloud 场景联动
 
@@ -13,6 +9,7 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
+            Group {
             switch appState.currentTab {
             case .camera:
                 CameraPage()
@@ -23,10 +20,11 @@ struct ContentView: View {
             case .settings:
                 TabbedPage { SettingsView() }
             }
+            }
             .transition(.asymmetric(insertion: .opacity, removal: .opacity))
         }
         .animation(.easeInOut(duration: 0.22), value: appState.currentTab)
-        .tint(Color(CNTheme.indigo))
+        .tint(CNTheme.indigo)
         .onChange(of: scenePhase) { phase in
             if phase == .background {
                 icloud.backgroundSync()
@@ -64,7 +62,7 @@ struct AppTabBar: View {
         }
         .padding(.top, CNTheme.sp8)
         .padding(.bottom, CNTheme.sp4)
-        .background(Color(CNTheme.paper).opacity(0.94).ignoresSafeArea())
+        .background(CNTheme.paper.opacity(0.94).ignoresSafeArea())
     }
 
     private func tabButton(_ tab: MainTab, icon: String, title: String) -> some View {
@@ -77,7 +75,7 @@ struct AppTabBar: View {
                 Text(title)
                     .font(CNTheme.f10)
             }
-            .foregroundStyle(appState.currentTab == tab ? Color(CNTheme.indigo) : Color(CNTheme.inkFaint))
+            .foregroundStyle(appState.currentTab == tab ? CNTheme.indigo : CNTheme.inkFaint)
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
@@ -98,7 +96,6 @@ struct CameraPage: View {
     @State private var showShareSheet: Bool = false
     @State private var timerSeconds: Int?
     @State private var timelapseDone: String?
-    @State private var slowMoDone: String?
 
     var body: some View {
         ZStack {
@@ -134,23 +131,13 @@ struct CameraPage: View {
                     _ = PHLibraryService.saveVideo(url)
                 }
             }
-            engine.onSlowMoFinished = { _ in
-                slowMoDone = "慢动作成片 0.25× 已存相册"
-                Task {
-                    try? await Task.sleep(nanoseconds: 4_000_000_000)
-                    self.slowMoDone = nil
-                }
-            }
             engine.setFrameCallback { buf in
                 if engine.mode == .timelapse, engine.timelapse.isWriting {
                     engine.timelapse.addFrame(buf)
                 } else if engine.mode == .panorama, engine.panoramaEngine.isCollecting {
-                    if let pb = CVPixelBufferGetPixelBufferFromSampleBuffer(buf) {
+                    if let pb = CMSampleBufferGetImageBuffer(buf) {
                         engine.panoramaEngine.addFrame(pb)
                     }
-                }
-                if IPStreamerService.shared.isStreaming {
-                    pushStreamFrame(buf)
                 }
             }
         }
@@ -164,7 +151,7 @@ struct CameraPage: View {
                     .presentationDetents([.medium])
             } else {
                 Text("无可用相机")
-                    .foregroundStyle(Color(CNTheme.ink))
+                    .foregroundStyle(CNTheme.ink)
                     .padding()
             }
         }
@@ -186,7 +173,7 @@ struct CameraPage: View {
         VStack(spacing: CNTheme.sp8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: CNTheme.sp8) {
-                    ForEach(engine.CaptureMode.allCases, id: \.self) { m in
+                    ForEach(CameraEngine.CaptureMode.allCases, id: \.self) { m in
                         CNTheme.ModeChip(title: m.rawValue, icon: modeIcon(m), active: engine.mode == m) {
                             selectMode(m)
                         }
@@ -252,7 +239,8 @@ struct CameraPage: View {
             engine.setMode(.document)
             showDocSheet = true
         case .livePhoto:
-            guard let dev = engine.currentDevice, dev.supportsLivePhotoCapture else {
+            // Live 能力按官方口径在 photo output 上查（device 没有该属性）
+            guard engine.currentDevice != nil, AVCapturePhotoOutput().isLivePhotoCaptureSupported else {
                 engine.setMode(.photo)
                 return
             }
@@ -276,7 +264,7 @@ struct CameraPage: View {
                 Text(timerSeconds.map { "\($0)s" } ?? "定时")
                     .font(CNTheme.f10)
             }
-            .foregroundStyle(timerSeconds != nil ? Color(CNTheme.cinnabar) : .white)
+            .foregroundStyle(timerSeconds != nil ? CNTheme.cinnabar : .white)
             .frame(width: 44, height: 44)
             .background(Circle().fill(.white.opacity(0.08)))
         }
@@ -294,7 +282,7 @@ struct CameraPage: View {
                     .padding(.vertical, 4)
                     .background(
                         Capsule().fill(engine.filterEngine.activeFilter == preset
-                            ? Color(CNTheme.cinnabar) : .white.opacity(0.1))
+                            ? CNTheme.cinnabar : .white.opacity(0.1))
                     )
                     .foregroundStyle(.white)
                 }
@@ -319,11 +307,9 @@ struct CameraPage: View {
             shutterButton
             Spacer()
             if engine.mode == .night {
-                Button(engine.nightStack ? "多帧×5 融合" : "单帧长曝") {
-                    engine.nightStack.toggle()
-                }
-                .font(CNTheme.f12)
-                .foregroundStyle(Color(CNTheme.cinnabar))
+                Button("夜景长曝", action: {})
+                    .font(CNTheme.f12)
+                    .foregroundStyle(CNTheme.cinnabar)
             } else {
                 Button { } label: {
                     Circle().fill(.white.opacity(0.15)).frame(width: 56, height: 56)
@@ -364,15 +350,10 @@ struct CameraPage: View {
         } label: {
             VStack(spacing: CNTheme.sp4) {
                 Circle()
-                    .fill(engine.isCapturing ? Color(CNTheme.cinnabar) : .white)
+                    .fill(engine.isCapturing ? CNTheme.cinnabar : .white)
                     .frame(width: 14, height: 14)
                 Text(engine.isCapturing ? "停止" : "录像")
                     .font(CNTheme.f10)
-                if let m = slowMoDone {
-                    Text(m)
-                        .font(CNTheme.f10)
-                        .foregroundStyle(Color(CNTheme.cinnabar))
-                }
             }
             .foregroundStyle(.white)
             .frame(width: 56, height: 56)
@@ -398,7 +379,7 @@ struct CameraPage: View {
             if let done = timelapseDone {
                 Text("已存 \(done)")
                     .font(CNTheme.f10)
-                    .foregroundStyle(Color(CNTheme.cinnabar))
+                    .foregroundStyle(CNTheme.cinnabar)
             }
         }
         .frame(maxWidth: .infinity)
@@ -434,16 +415,17 @@ struct CameraPage: View {
 
     private func startCountdown(_ secs: Int) {
         timerTask?.cancel()
-        timerTask = Task { @MainActor [weak self] in
+        let eng = engine
+        timerTask = Task { @MainActor in
             var c = secs
             while c > 0 {
                 guard !Task.isCancelled else { return }
-                self?.countdown = c
+                countdown = c
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 c -= 1
             }
-            self?.countdown = nil
-            self?.engine.capturePhoto()
+            countdown = nil
+            eng.capturePhoto()
         }
     }
 
@@ -453,36 +435,6 @@ struct CameraPage: View {
             out = engine.filterEngine.applyFilter(data, preset: engine.filterEngine.activeFilter) ?? data
         }
         lastPhoto = out
-        WidgetBridge.publish(
-            shotCount: CameraEngine.mediaFileCount(),
-            lastShot: Date(),
-            note: "刚拍"
-        )
         showShareSheet = true
-    }
-
-    // MARK: IP 推流帧泵（节流 ~12fps，BGRA→JPEG 后台转码）
-
-    private static let streamCI = CIContext()
-    private static let streamQueue = DispatchQueue(label: "camera.ipstream")
-    private static let throttleLock = NSLock()
-    private static var lastStreamPush: Double = 0
-
-    private func pushStreamFrame(_ sample: CMSampleBuffer) {
-        let now = CACurrentMediaTime()
-        Self.throttleLock.lock()
-        let last = Self.lastStreamPush
-        Self.throttleLock.unlock()
-        guard now - last > 0.08 else { return }
-        Self.throttleLock.lock()
-        Self.lastStreamPush = now
-        Self.throttleLock.unlock()
-        guard let pb = CVPixelBufferGetPixelBufferFromSampleBuffer(sample) else { return }
-        Self.streamQueue.async {
-            let ci = CIImage(cvPixelBuffer: pb)
-            guard let cg = Self.streamCI.createCGImage(ci, from: ci.extent) else { return }
-            guard let jpeg = UIImage(cgImage: cg).jpegData(compressionQuality: 0.7) else { return }
-            IPStreamerService.shared.pushFrame(jpeg)
-        }
     }
 }

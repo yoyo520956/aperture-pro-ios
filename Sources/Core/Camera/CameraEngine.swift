@@ -1,9 +1,11 @@
 import AVFoundation
 import CoreImage
+import ImageIO
 import UIKit
 import Photos
 
 /// 相机引擎 v2：拍照 / 录像 / 4K / 慢动作 / 夜景 / HDR / Live Photo / 稳定器
+/// 全部使用 Apple 官方公开 API（iOS 16 基线），公开接口与 v2 保持一致
 @MainActor
 class CameraEngine: ObservableObject {
     enum CaptureMode: String, CaseIterable {
@@ -19,7 +21,7 @@ class CameraEngine: ObservableObject {
 
     @Published var isRunning: Bool = false
     @Published var isCapturing: Bool = false
-    @Published var flashMode: AVFlashMode = .off
+    @Published var flashMode: AVCaptureDevice.FlashMode = .off
     @Published var cameraPosition: AVCaptureDevice.Position = .back
     @Published var mode: CaptureMode = .photo
     @Published var recordingName: String = ""
@@ -28,8 +30,12 @@ class CameraEngine: ObservableObject {
     private let videoOutput = AVCaptureVideoDataOutput()
     private let photoOutput = AVCapturePhotoOutput()
     private let movieOutput = AVCaptureMovieFileOutput()
-    private var videoDataCallback: ((CMSampleBuffer) -> Void)?
-    private var photoDoneCallback: ((Data) -> Void)?
+    /// 帧回调代理（delegate 自持回调，避开 @MainActor 隔离冲突）
+    private let videoDelegate = VideoDataDelegate()
+    /// 录像委托（AVFoundation 不强持有，引擎强持有）
+    private var movieDelegate: MovieRecordingDelegate?
+    /// 拍照委托强持有（AV 拍照期间不强持有 delegate，需自持）
+    private var photoDelegates: [NSObject] = []
     var videoPreviewLayer: AVCaptureVideoPreviewLayer?
 
     let filterEngine = FilterEngine()
@@ -43,8 +49,8 @@ class CameraEngine: ObservableObject {
     var onSlowMoFinished: ((String) -> Void)?
     /// 夜景是否走多帧堆栈融合（默认开；关 = 单帧长曝）
     @Published var nightStack: Bool = true
-    private var nightQueue: [CIImage] = []
-    private var nightEVs: [Double] = []
+    var nightQueue: [CIImage] = []
+    var nightEVs: [Double] = []
 
     static var mediaDir: URL {
         let docs = FileManager.default
@@ -60,9 +66,11 @@ class CameraEngine: ObservableObject {
 
     func configure() {
         guard session.inputs.isEmpty else { return }
+        session.beginConfiguration()
         setupVideoOutput()
         setupPhotoOutput()
         setupMovieOutput()
+        session.commitConfiguration()
         switchCamera(cameraPosition)
         session.sessionPreset = .high
     }
@@ -72,30 +80,26 @@ class CameraEngine: ObservableObject {
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
         ]
         videoOutput.alwaysDiscardsLateVideoFrames = true
-        videoOutput.setSampleBufferDelegate(VideoDataDelegate(self), queue: DispatchQueue(label: "video.data.queue"))
-        session.addOutput(videoOutput)
+        videoDelegate.parent = self
+        videoOutput.setSampleBufferDelegate(videoDelegate,
+                                             queue: DispatchQueue(label: "video.data.queue"))
+        if session.canAddOutput(videoOutput) { session.addOutput(videoOutput) }
     }
 
     private func setupPhotoOutput() {
-        if photoOutput.isFlashSupported {
-            photoOutput.flashMode = flashMode
+        // Live Photo 能力在 output 上开启（官方：isLivePhotoCaptureSupported / Enabled）
+        if photoOutput.isLivePhotoCaptureSupported {
+            photoOutput.isLivePhotoCaptureEnabled = true
         }
-        session.addOutput(photoOutput)
+        if session.canAddOutput(photoOutput) { session.addOutput(photoOutput) }
     }
 
     private func setupMovieOutput() {
-        session.addOutput(movieOutput)
+        if session.canAddOutput(movieOutput) { session.addOutput(movieOutput) }
     }
 
     func switchCamera(_ position: AVCaptureDevice.Position) {
         cameraPosition = position
-        if let device = currentDevice {
-            switchCameraInput(device: device, position: position)
-            applyStabilization()
-        }
-    }
-
-    private func switchCameraInput(device: AVCaptureDevice, position: AVCaptureDevice.Position) {
         session.beginConfiguration()
         for input in session.inputs {
             session.removeInput(input)
@@ -104,21 +108,22 @@ class CameraEngine: ObservableObject {
         let dev = AVCaptureDevice.default(want, for: .video, position: position)
             ?? AVCaptureDevice.default(for: .video)
         if let dev, let input = try? AVCaptureDeviceInput(device: dev) {
-            session.addInput(input)
+            if session.canAddInput(input) { session.addInput(input) }
         }
-        applyStabilization()
         session.commitConfiguration()
+        applyStabilization()
     }
 
+    /// 官方防抖：AVCaptureConnection.preferredVideoStabilizationMode
+    /// .auto 由系统按机型选最高档（A12+ 自动给 .cinematic），对应旧意图 cinematicAuto→standard 降级
     private func applyStabilization() {
-        guard let device = currentDevice else { return }
-        if device.stabilizationSupported {
-            if device.supportsStabilization(.cinematicAuto) {
-                device.stabilization = .cinematicAuto
-            } else {
-                device.stabilization = .standard
-            }
-        }
+        applyStabilization(on: videoOutput.connection(with: .video))
+        applyStabilization(on: movieOutput.connection(with: .video))
+    }
+
+    private func applyStabilization(on connection: AVCaptureConnection?) {
+        guard let connection, connection.isVideoStabilizationSupported else { return }
+        connection.preferredVideoStabilizationMode = .auto
     }
 
     func start() {
@@ -134,11 +139,9 @@ class CameraEngine: ObservableObject {
         isRunning = false
     }
 
-    func setFlash(_ mode: AVFlashMode) {
+    /// 闪光模式按照片粒度生效（官方：settings.flashMode），这里只记状态
+    func setFlash(_ mode: AVCaptureDevice.FlashMode) {
         flashMode = mode
-        if photoOutput.isFlashSupported {
-            photoOutput.flashMode = mode
-        }
     }
 
     var currentDevice: AVCaptureDevice? {
@@ -150,7 +153,6 @@ class CameraEngine: ObservableObject {
 
     func setMode(_ mode: CaptureMode) {
         self.mode = mode
-        session.beginConfiguration()
         switch mode {
         case .timelapse:
             timelapse.start(width: 1280, height: 720)
@@ -158,32 +160,45 @@ class CameraEngine: ObservableObject {
             panoramaEngine.reset()
         case .slowMo:
             configureFormat(width: 1920, height: 1080, fps: 120)
-            session.sessionPreset = .photo4032x3024
+            session.sessionPreset = .hd1920x1080
         case .night:
             configureFormat(width: 3840, height: 2160, fps: 30)
-            session.sessionPreset = .photo4032x3024
+            session.sessionPreset = .hd4K3840x2160
+        case .photo:
+            session.sessionPreset = .photo
+            timelapse.stop()
         default:
             session.sessionPreset = .high
             timelapse.stop()
-            break
         }
-        session.commitConfiguration()
     }
 
     /// 按分辨率 + 帧率挑一个可用的设备 format（慢动作要 120fps）
+    /// 官方 API：CMVideoFormatDescriptionGetDimensions + videoSupportedFrameRateRanges + lockForConfiguration
     private func configureFormat(width: Int32, height: Int32, fps: Int32) {
         guard let device = currentDevice else { return }
-        let matched = device.formats.first { fmt -> Bool in
-            let size = fmt.videoSupportedDimensions.contains {
-                abs($0.width - width) < 64 && abs($0.height - height) < 64
+        var matched: AVCaptureDevice.Format?
+        for fmt in device.formats {
+            let dims = CMVideoFormatDescriptionGetDimensions(fmt.formatDescription)
+            let sizeOK = abs(Int(dims.width) - Int(width)) < 64
+                && abs(Int(dims.height) - Int(height)) < 64
+            guard sizeOK else { continue }
+            var rateOK = false
+            for range in fmt.videoSupportedFrameRateRanges {
+                if range.maxFrameRate >= Double(fps) - 1.5 { rateOK = true; break }
             }
-            let rate = fmt.videoSupportedFrameRates.contains { abs($0.value - Double(fps)) < 1.5 }
-            return size && rate
+            if rateOK { matched = fmt; break }
         }
-        if let matched {
-            do { try device.setActiveFormat(matched) } catch {
-                NSLog("format switch failed: \(error.localizedDescription)")
-            }
+        guard let fmt = matched else {
+            NSLog("configureFormat: no format for %dx%d@%d, keep current", width, height, fps)
+            return
+        }
+        do {
+            try device.lockForConfiguration()
+            device.activeFormat = fmt
+            device.unlockForConfiguration()
+        } catch {
+            NSLog("format switch failed: %@", error.localizedDescription)
         }
     }
 
@@ -193,7 +208,8 @@ class CameraEngine: ObservableObject {
         guard !isCapturing else { return }
         let settings = AVCapturePhotoSettings()
         settings.photoQualityPrioritization = .quality
-        if photoOutput.isFlashSupported {
+        settings.isAutoStillImageStabilizationEnabled = true
+        if photoOutput.supportedFlashModes.contains(flashMode) {
             settings.flashMode = flashMode
         }
         switch mode {
@@ -202,11 +218,15 @@ class CameraEngine: ObservableObject {
                 captureNightStack()
                 return
             }
-            if AVCapturePhotoSettings.supportsLowLightMode {
-                settings.lowLightMode = .night
-            }
-            if AVCapturePhotoSettings.supportsHighDynamicRange20Bit {
-                settings.isHighDynamicRange20BitEnabled = true
+            // 官方低光增强：device.automaticallyEnablesLowLightBoostWhenAvailable
+            if let device = currentDevice, device.isLowLightBoostSupported {
+                do {
+                    try device.lockForConfiguration()
+                    device.automaticallyEnablesLowLightBoostWhenAvailable = true
+                    device.unlockForConfiguration()
+                } catch {
+                    NSLog("low light boost failed: %@", error.localizedDescription)
+                }
             }
         case .livePhoto:
             captureLivePhoto()
@@ -215,32 +235,51 @@ class CameraEngine: ObservableObject {
             break
         }
         isCapturing = true
-        photoOutput.capturePhoto(with: settings, delegate: PhotoCaptureDelegate(self))
+        let delegate = PhotoCaptureDelegate()
+        delegate.parent = self
+        retainPhotoDelegate(delegate)
+        photoOutput.capturePhoto(with: settings, delegate: delegate)
     }
 
-    /// Live Photo：先向设备申请 live 输出格式，再走 live 拍照
+    /// Live Photo 官方范式（AVCam）：
+    /// settings.livePhotoMovieFileURL + quickTimeMetadataKeyContentIdentifier
+    /// + JPEG MakerApple 字典 "17"（asset identifier）双向配对，
+    /// 影片落盘走 delegate 的 didFinishRecordingLivePhotoMovieForEventualFileAt 回调
     private func captureLivePhoto() {
-        guard let device = currentDevice, device.supportsLivePhotoCapture else {
+        guard photoOutput.isLivePhotoCaptureSupported else {
             capturePhoto()
             return
         }
-        device.requestLivePhotoCapture { [weak self] outputFormat, error in
-            guard let self else { return }
-            guard let outputFormat, error == nil else {
-                DispatchQueue.main.async {
-                    self.capturePhoto()
-                    self.isCapturing = false
-                }
-                return
-            }
-            let settings = AVCapturePhotoSettings(livePhotoCaptureOutputFormat: outputFormat)
-            settings.photoQualityPrioritization = .auto
-            if self.photoOutput.isFlashSupported {
-                settings.flashMode = self.flashMode
-            }
-            self.isCapturing = true
-            self.photoOutput.capturePhoto(with: settings, delegate: PhotoCaptureDelegate(self))
+        photoOutput.isLivePhotoCaptureEnabled = true
+        let settings = AVCapturePhotoSettings()
+        settings.photoQualityPrioritization = .auto
+        if photoOutput.supportedFlashModes.contains(flashMode) {
+            settings.flashMode = flashMode
         }
+        let assetID = UUID().uuidString
+        let movieURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("live_\(assetID).mov")
+        settings.livePhotoMovieFileURL = movieURL
+        let idItem = AVMutableMetadataItem()
+        idItem.keySpace = .quickTimeMetadata
+        idItem.key = AVMetadataKey.quickTimeMetadataKeyContentIdentifier
+            as (NSCopying & NSObjectProtocol)?
+        idItem.value = assetID as (NSCopying & NSObjectProtocol)?
+        settings.livePhotoMovieMetadata = [idItem]
+        settings.metadata["MakerApple"] = ["17": assetID]
+        isCapturing = true
+        let delegate = PhotoCaptureDelegate()
+        delegate.parent = self
+        retainPhotoDelegate(delegate)
+        photoOutput.capturePhoto(with: settings, delegate: delegate)
+    }
+
+    /// 拍照收尾统一出口：写盘 + 回调
+    func finishCapture(_ data: Data) {
+        let dest = Self.mediaDir.appendingPathComponent("p_\(UUID().uuidString).jpg")
+        try? data.write(to: dest)
+        isCapturing = false
+        onPhotoCaptured?(data)
     }
 
     // MARK: 录像
@@ -250,7 +289,10 @@ class CameraEngine: ObservableObject {
         let name = "rec_\(Int(Date().timeIntervalSince1970)).mov"
         let outURL = Self.mediaDir.appendingPathComponent(name)
         recordingName = name
-        movieOutput.startRecording(to: outURL, delegate: MovieRecordingDelegate(self))
+        let delegate = MovieRecordingDelegate()
+        delegate.parent = self
+        movieDelegate = delegate
+        movieOutput.startRecording(to: outURL, recordingDelegate: delegate)
         isCapturing = true
     }
 
@@ -287,33 +329,41 @@ class CameraEngine: ObservableObject {
         captureNightFrame(index: 0, of: 5, device: device)
     }
 
-    private func captureNightFrame(index: Int, of total: Int, device: AVCaptureDevice) {
+    /// ISO 包围：base × 2^(index-mid)，官方 setExposureModeCustom(duration:iso:) 手动曝光
+    func captureNightFrame(index: Int, of total: Int, device: AVCaptureDevice) {
         guard index < total else {
             finishNightStack()
             return
         }
+        let mid = Double(total - 1) / 2.0
+        let base = Double(device.ISO)
+        let target = Float(base * pow(2.0, Double(index) - mid))
+        let clampedISO = max(device.minISO, min(device.maxISO, target))
+        let quarter: CMTime = CMTime(seconds: 0.25, preferredTimescale: 600)
+        let maxDur = device.activeFormat.maxExposureDuration
+        let dur = CMTimeCompare(maxDur, quarter) < 0 ? maxDur : quarter
+        do {
+            try device.lockForConfiguration()
+            device.setExposureModeCustom(duration: dur, iso: clampedISO, completionHandler: nil)
+            device.unlockForConfiguration()
+        } catch {
+            NSLog("manual exposure failed: %@", error.localizedDescription)
+        }
         let settings = AVCapturePhotoSettings()
         settings.photoQualityPrioritization = .quality
-        if photoOutput.isFlashSupported {
+        if photoOutput.supportedFlashModes.contains(flashMode) {
             settings.flashMode = flashMode
         }
-        if AVCapturePhotoSettings.supportsLowLightMode {
-            settings.lowLightMode = .night
-        }
-        // ISO 包围：base × 2^(index - mid)，夹在设备范围内
-        let mid = Double(total - 1) / 2.0
-        let base = Double(device.activeISO)
-        let iso = Int((base * pow(2.0, Double(index) - mid)).rounded())
-        settings.iso = max(device.minISO, min(device.maxISO, iso))
-        settings.shutterDuration = device.maximumShutterDuration
-        let ev = Double(index) - mid
-        photoOutput.capturePhoto(
-            with: settings,
-            delegate: NightStackDelegate(self, index: index, total: total, device: device, ev: ev)
-        )
+        let delegate = NightStackDelegate()
+        delegate.parent = self
+        delegate.index = index
+        delegate.total = total
+        delegate.ev = Double(index) - mid
+        retainPhotoDelegate(delegate)
+        photoOutput.capturePhoto(with: settings, delegate: delegate)
     }
 
-    private func finishNightStack() {
+    func finishNightStack() {
         let frames = nightQueue
         let evs = nightEVs
         nightQueue = []
@@ -328,10 +378,10 @@ class CameraEngine: ObservableObject {
             if let fused = NightFusion.fuse(frames: frames, evs: evs) {
                 jpeg = NightFusion.renderJPEG(fused)
             }
-            if jpeg == nil, let fallback = frames[frames.count / 2] {
-                jpeg = NightFusion.renderJPEG(fallback)
+            if jpeg == nil {
+                jpeg = NightFusion.renderJPEG(frames[frames.count / 2])
             }
-            DispatchQueue.main.async {
+            await MainActor.run {
                 guard let data = jpeg else {
                     self.isCapturing = false
                     return
@@ -340,17 +390,28 @@ class CameraEngine: ObservableObject {
                     "night_\(Int(Date().timeIntervalSince1970)).jpg"
                 )
                 try? data.write(to: url)
-                _ = PHLibraryService.saveImage(data)
+                PHLibraryService.saveImage(data)
                 self.isCapturing = false
                 self.onPhotoCaptured?(data)
             }
         }
     }
 
+    // MARK: 委托强持有（AV 不强持有拍照 delegate）
+
+    func retainPhotoDelegate(_ delegate: NSObject) {
+        photoDelegates.append(delegate)
+        // 顺带清掉已释放 parent 的旧委托
+        photoDelegates.removeAll {
+            ($0 as? PhotoCaptureDelegate)?.parent == nil
+                || ($0 as? NightStackDelegate)?.parent == nil
+        }
+    }
+
     // MARK: 回调注入
 
     func setFrameCallback(_ callback: @escaping ((CMSampleBuffer) -> Void)) {
-        videoDataCallback = callback
+        videoDelegate.callback = callback
     }
 
     func setPreviewLayer(_ layer: AVCaptureVideoPreviewLayer) {
@@ -359,122 +420,131 @@ class CameraEngine: ObservableObject {
     }
 }
 
-extension CameraEngine {
-    struct VideoDataDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
-        let parent: CameraEngine
+// MARK: - 帧数据委托（视频队列回调，非隔离类）
 
-        func videoDataOutput(
-            _ output: AVCaptureVideoDataOutput,
-            didOutput sampleBuffer: CMSampleBuffer,
-            from _ connection: AVCaptureConnection
-        ) {
-            parent.videoDataCallback?(sampleBuffer)
+final class VideoDataDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+    weak var parent: CameraEngine?
+    /// 主线程写、视频队列读：预览帧管线可容忍良性竞态
+    var callback: ((CMSampleBuffer) -> Void)?
+
+    func videoDataOutput(
+        _ output: AVCaptureVideoDataOutput,
+        didOutput sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
+    ) {
+        callback?(sampleBuffer)
+    }
+}
+
+// MARK: - 夜景堆栈委托：逐帧 ISO 包围 → 收齐进融合
+
+final class NightStackDelegate: NSObject, AVCapturePhotoCaptureDelegate {
+    weak var parent: CameraEngine?
+    var index: Int = 0
+    var total: Int = 5
+    var ev: Double = 0
+
+    func photoOutput(
+        _ output: AVCapturePhotoOutput,
+        didFinishProcessingPhoto photo: AVCapturePhoto,
+        error: Error?
+    ) {
+        let data = photo.fileDataRepresentation()
+        DispatchQueue.main.async {
+            guard let parent = self.parent else { return }
+            if let data, let ci = CIImage(data: data) {
+                parent.nightQueue.append(ci)
+                parent.nightEVs.append(self.ev)
+            }
+            if self.index + 1 < self.total, let device = parent.currentDevice {
+                parent.captureNightFrame(index: self.index + 1, of: self.total, device: device)
+            } else {
+                parent.finishNightStack()
+            }
         }
     }
 }
 
-extension CameraEngine {
-    /// 夜景堆栈拍照委托：逐帧 ISO 包围 → 收齐 5 帧后进融合
-    struct NightStackDelegate: NSObject, AVCapturePhotoCaptureDelegate {
-        let parent: CameraEngine
-        let index: Int
-        let total: Int
-        let device: AVCaptureDevice
-        let ev: Double
+// MARK: - 拍照委托（含 Live Photo 影片完成回调）
 
-        func photoOutput(
-            _ output: AVCapturePhotoOutput,
-            didFinishProcessingPhoto photo: AVCapturePhoto,
-            error: Error?
-        ) {
-            DispatchQueue.main.async {
-                if let data = photo.fileDataRepresentation(),
-                   let ci = CIImage(jpegDataRepresentation: data) {
-                    self.parent.nightQueue.append(ci)
-                    self.parent.nightEVs.append(self.ev)
-                }
-                if self.index + 1 < self.total {
-                    self.parent.captureNightFrame(index: self.index + 1, of: self.total, device: self.device)
-                } else {
-                    self.parent.finishNightStack()
-                }
-            }
-        }
+final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
+    weak var parent: CameraEngine?
+    /// Live 模式：照片先到，暂存等配对影片回调
+    private var pendingJPEG: Data?
 
-        func photoOutput(
-            _ output: AVCapturePhotoOutput,
-            didFinishCapturingPhotoInHighResolution _ photo: AVCapturePhoto,
-            error: Error?
-        ) {}
-    }
-
-    struct PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
-        let parent: CameraEngine
-
-        func photoOutput(
-            _ output: AVCapturePhotoOutput,
-            didFinishProcessingPhoto photo: AVCapturePhoto,
-            error: Error?
-        ) {
-            guard let data = photo.fileDataRepresentation() else {
-                DispatchQueue.main.async { self.parent.isCapturing = false }
+    func photoOutput(
+        _ output: AVCapturePhotoOutput,
+        didFinishProcessingPhoto photo: AVCapturePhoto,
+        error: Error?
+    ) {
+        let data = photo.fileDataRepresentation()
+        DispatchQueue.main.async {
+            guard let parent = self.parent else { return }
+            guard let data else {
+                parent.isCapturing = false
                 return
             }
-            DispatchQueue.main.async {
-                if self.parent.mode == .livePhoto {
-                    if let movieData = photo.movieFileDataRepresentation() {
-                        let liveURL = FileManager.default.temporaryDirectory
-                            .appendingPathComponent("live_\(UUID().uuidString).mov")
-                        try? movieData.write(to: liveURL)
-                        LivePhotoService.saveLivePhoto(videoURL: liveURL, photoData: data)
-                    }
+            if parent.mode == .livePhoto {
+                self.pendingJPEG = data
+                // 兜底：2 秒内配对影片回调没来，就按普通照片收尾
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    guard let pending = self.pendingJPEG else { return }
+                    self.pendingJPEG = nil
+                    parent.finishCapture(pending)
                 }
-                let dest = Self.mediaDirURL().appendingPathComponent("p_\(UUID().uuidString).jpg")
-                try? data.write(to: dest)
-                self.parent.isCapturing = false
-                self.parent.onPhotoCaptured?(data)
+                return
             }
+            parent.finishCapture(data)
         }
-
-        func photoOutput(
-            _ output: AVCapturePhotoOutput,
-            didFinishCapturingPhotoInHighResolution _ photo: AVCapturePhoto,
-            error: Error?
-        ) {}
     }
 
-    private static func mediaDirURL() -> URL {
-        CameraEngine.mediaDir
+    /// 官方 Live 影片落盘回调：与 JPEG 一起交给 LivePhotoService（.photo + .pairedVideo）
+    func photoOutput(
+        _ output: AVCapturePhotoOutput,
+        didFinishRecordingLivePhotoMovieForEventualFileAt outputFileURL: URL,
+        resolvedSettings: AVCaptureResolvedLivePhotoMediaFormatDescription
+    ) {
+        DispatchQueue.main.async {
+            guard let parent = self.parent, let jpeg = self.pendingJPEG else { return }
+            self.pendingJPEG = nil
+            LivePhotoService.saveLivePhoto(videoURL: outputFileURL, photoData: jpeg)
+            parent.finishCapture(jpeg)
+        }
     }
+
+    func photoOutput(
+        _ output: AVCapturePhotoOutput,
+        didFinishProcessingLivePhotoToMovieFileAt outputFileURL: URL,
+        duration: CMTime,
+        photoDisplayTime: CMTime,
+        resolvedSettings: AVCaptureResolvedLivePhotoMediaFormatDescription,
+        error: Error?
+    ) {}
 }
 
-extension CameraEngine {
-    struct MovieRecordingDelegate: NSObject, AVCaptureFileDataRecordingDelegate {
-        let parent: CameraEngine
+// MARK: - 录像委托（官方 AVCaptureFileOutputRecordingDelegate）
 
-        func fileOutput(
-            _ output: AVCaptureFileDataOutput,
-            didStartRecordingTo fileURL: URL,
-            recordingTimeIn _ fileDuration: CMTime
-        ) {}
+final class MovieRecordingDelegate: NSObject, AVCaptureFileOutputRecordingDelegate {
+    weak var parent: CameraEngine?
 
-        func fileOutput(
-            _ output: AVCaptureFileDataOutput,
-            didFinishRecordingTo fileURL: URL,
-            from time: CMTime,
-            error: Error?
-        ) {
-            DispatchQueue.main.async {
-                let name = fileURL.lastPathComponent
-                self.parent.isCapturing = false
-                self.parent.onVideoFinished?(name)
-            }
+    func fileOutput(
+        _ output: AVCaptureFileOutput,
+        didStartRecordingTo fileURL: URL,
+        from connections: [AVCaptureConnection]
+    ) {}
+
+    func fileOutput(
+        _ output: AVCaptureFileOutput,
+        didFinishRecordingTo outputFileURL: URL,
+        from connections: [AVCaptureConnection],
+        error: Error?
+    ) {
+        if let error {
+            NSLog("record failed: %@", error.localizedDescription)
         }
-
-        func fileOutput(
-            _ output: AVCaptureFileDataOutput,
-            didRecordFileDataForType type: AVMediaType,
-            at fileURL: URL
-        ) {}
+        DispatchQueue.main.async {
+            self.parent?.isCapturing = false
+            self.parent?.onVideoFinished?(outputFileURL.lastPathComponent)
+        }
     }
 }

@@ -42,17 +42,7 @@ struct GalleryView: View {
             .background(CNTheme.pageBackground())
             .navigationTitle("相册")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if tab == .mine {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button(selecting ? "完成" : "选择") {
-                            selecting.toggle()
-                            selectedIDs = []
-                        }
-                        .tint(Color(CNTheme.indigo))
-                    }
-                }
-            }
+            .toolbar(content: { galleryToolbar })
             .sheet(item: $detailItem) { item in
                 MediaDetailView(item: item)
             }
@@ -63,6 +53,19 @@ struct GalleryView: View {
         .onAppear {
             store.load()
             loadSystem()
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var galleryToolbar: some ToolbarContent {
+        if tab == .mine {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(selecting ? "完成" : "选择") {
+                    selecting.toggle()
+                    selectedIDs = []
+                }
+                .tint(CNTheme.indigo)
+            }
         }
     }
 
@@ -104,13 +107,13 @@ struct GalleryView: View {
         VStack(spacing: CNTheme.sp8) {
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 44, weight: .ultraLight))
-                .foregroundStyle(Color(CNTheme.inkFaint))
+                .foregroundStyle(CNTheme.inkFaint)
             Text("暂无媒体")
                 .font(CNTheme.f17)
-                .foregroundStyle(Color(CNTheme.ink))
+                .foregroundStyle(CNTheme.ink)
             Text("拍一张，或从系统相册取回")
                 .font(CNTheme.f12)
-                .foregroundStyle(Color(CNTheme.inkFaint))
+                .foregroundStyle(CNTheme.inkFaint)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 60)
@@ -128,7 +131,7 @@ struct GalleryView: View {
         HStack(spacing: CNTheme.sp16) {
             Text("已选 \(selectedIDs.count)")
                 .font(CNTheme.f14)
-                .foregroundStyle(Color(CNTheme.inkSub))
+                .foregroundStyle(CNTheme.inkSub)
             Spacer()
             Button {
                 stitchSelected()
@@ -137,7 +140,7 @@ struct GalleryView: View {
                     .font(CNTheme.f14)
                     .fontWeight(.medium)
             }
-            .tint(selectedIDs.count >= 2 ? Color(CNTheme.cinnabar) : Color(CNTheme.inkFaint))
+            .tint(selectedIDs.count >= 2 ? CNTheme.cinnabar : CNTheme.inkFaint)
             .disabled(selectedIDs.count < 2)
         }
         .padding(CNTheme.sp12)
@@ -180,7 +183,7 @@ struct GalleryView: View {
             if systemItems.isEmpty {
                 Text("系统相册为空或无权限")
                     .font(CNTheme.f12)
-                    .foregroundStyle(Color(CNTheme.inkFaint))
+                    .foregroundStyle(CNTheme.inkFaint)
                     .padding(.top, 40)
             }
         }
@@ -210,7 +213,7 @@ struct MediaCell: View {
             .overlay {
                 if isSelecting {
                     Circle()
-                        .fill(selected ? Color(CNTheme.cinnabar) : .white.opacity(0.3))
+                        .fill(selected ? CNTheme.cinnabar : .white.opacity(0.3))
                         .frame(width: 22, height: 22)
                         .overlay(Circle().stroke(.white, lineWidth: selected ? 0 : 1.5))
                         .offset(x: 12, y: -12)
@@ -242,11 +245,11 @@ struct MediaCell: View {
                 .frame(minWidth: 1, minHeight: 1)
         } else {
             Rectangle()
-                .fill(Color(CNTheme.paperDeep))
+                .fill(CNTheme.paperDeep)
                 .overlay {
                     Image(systemName: item.kind == .photo ? "photo" : "video")
                         .font(.system(size: 20, weight: .light))
-                        .foregroundStyle(Color(CNTheme.inkFaint))
+                        .foregroundStyle(CNTheme.inkFaint)
                 }
         }
     }
@@ -265,8 +268,8 @@ struct SystemCell: View {
                     .frame(minWidth: 1, minHeight: 1)
             } else {
                 Rectangle()
-                    .fill(Color(CNTheme.paperDeep))
-                    .overlay(ProgressView().tint(Color(CNTheme.inkFaint)))
+                    .fill(CNTheme.paperDeep)
+                    .overlay(ProgressView().tint(CNTheme.inkFaint))
             }
         }
         .aspectRatio(1, contentMode: .fill)
@@ -351,7 +354,7 @@ struct MediaDetailView: View {
                 } label: {
                     Image(systemName: "square.and.arrow.up")
                         .font(CNTheme.f15)
-                        .foregroundStyle(Color(CNTheme.indigo))
+                        .foregroundStyle(CNTheme.indigo)
                 }
             }
             .padding(.horizontal, CNTheme.sp16)
@@ -389,12 +392,12 @@ struct MediaDetailView: View {
 
     private func infoRow(_ k: String, _ v: String) -> some View {
         HStack {
-            Text(k).foregroundStyle(Color(CNTheme.inkFaint))
+            Text(k).foregroundStyle(CNTheme.inkFaint)
             Spacer()
             Text(v).lineLimit(1)
         }
         .font(CNTheme.f14)
-        .foregroundStyle(Color(CNTheme.ink))
+        .foregroundStyle(CNTheme.ink)
     }
 }
 
@@ -427,7 +430,7 @@ private struct ImagePlaceholder: View {
             } else {
                 Text("文档预览")
                     .font(CNTheme.f15)
-                    .foregroundStyle(Color(CNTheme.inkSub))
+                    .foregroundStyle(CNTheme.inkSub)
             }
         }
         .onAppear {
@@ -480,7 +483,7 @@ struct SystemDetailSheet: View {
             if !note.isEmpty {
                 Text(note)
                     .font(CNTheme.f12)
-                    .foregroundStyle(Color(CNTheme.inkFaint))
+                    .foregroundStyle(CNTheme.inkFaint)
             }
 
             HStack(spacing: CNTheme.sp16) {
@@ -488,7 +491,7 @@ struct SystemDetailSheet: View {
                     copyToLocal()
                 }
                 .buttonStyle(.bordered)
-                .tint(Color(CNTheme.indigo))
+                .tint(CNTheme.indigo)
                 .disabled(full == nil && player == nil)
             }
         }
@@ -505,7 +508,7 @@ struct SystemDetailSheet: View {
             ProgressView()
             Text("加载中…")
                 .font(CNTheme.f12)
-                .foregroundStyle(Color(CNTheme.inkFaint))
+                .foregroundStyle(CNTheme.inkFaint)
         }
         .frame(maxHeight: 340)
     }
@@ -515,7 +518,7 @@ struct SystemDetailSheet: View {
             ProgressView()
             Text("视频导出中…")
                 .font(CNTheme.f12)
-                .foregroundStyle(Color(CNTheme.inkFaint))
+                .foregroundStyle(CNTheme.inkFaint)
         }
         .frame(maxHeight: 300)
     }

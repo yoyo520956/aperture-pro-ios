@@ -1,5 +1,6 @@
 import CoreImage
 import CoreGraphics
+import UIKit
 import Foundation
 
 /// 夜景多帧堆栈融合：EV 包围曝光帧 → 逐帧对齐到中间帧（homography 平移+尺度）
@@ -52,10 +53,10 @@ enum NightFusion {
 
         // 3) 去 gamma（sRGB≈2.2）进线性域，逐帧加权平均，回 gamma
         func linearize(_ img: CIImage) -> CIImage {
-            img.applyingFilter("CIGammaAdjust", parameters: [kCIInputPowerKey: 2.2, kCIInputOffsetKey: 0.0, kCIInputGammaKey: 1.0])
+            img.applyingFilter("CIGammaAdjust", parameters: ["inputPower": 2.2])
         }
         func gammap(_ img: CIImage) -> CIImage {
-            img.applyingFilter("CIGammaAdjust", parameters: [kCIInputPowerKey: 0.4545, kCIInputOffsetKey: 0.0, kCIInputGammaKey: 1.0])
+            img.applyingFilter("CIGammaAdjust", parameters: ["inputPower": 0.4545])
         }
 
         var acc = linearize(aligned[0])

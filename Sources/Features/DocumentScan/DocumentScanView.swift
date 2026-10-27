@@ -33,7 +33,7 @@ struct DocumentScanView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(Color(CNTheme.paper).ignoresSafeArea())
+        .background(CNTheme.paper.ignoresSafeArea())
         .navigationTitle("文档扫描")
         .onDisappear {
             // 文档扫描使用独立相机会话
@@ -57,7 +57,7 @@ struct DocumentScanView: View {
                         process()
                     }
                     .buttonStyle(.bordered)
-                    .tint(style == s ? Color(CNTheme.indigo) : Color(CNTheme.inkFaint))
+                    .tint(style == s ? CNTheme.indigo : CNTheme.inkFaint)
                 }
             }
             HStack(spacing: CNTheme.sp16) {
@@ -68,11 +68,11 @@ struct DocumentScanView: View {
                 Button("保存 PNG") {
                     saveAsPNG()
                 }
-                .tint(Color(CNTheme.indigo))
+                .tint(CNTheme.indigo)
                 Button("导出 PDF") {
                     saveAsPDF()
                 }
-                .tint(Color(CNTheme.cinnabar))
+                .tint(CNTheme.cinnabar)
             }
             .font(CNTheme.f14)
         }
@@ -123,12 +123,7 @@ struct DocumentScanView: View {
         let dest = CameraEngine.mediaDir.appendingPathComponent("doc_\(Int(Date().timeIntervalSince1970)).pdf")
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: processed.size))
         let data = renderer.pdfData { pdf in
-            pdf.beginPage(
-                pageInfo: [
-                    kCGImagePropertyImageWidth: processed.size.width,
-                    kCGImagePropertyImageHeight: processed.size.height,
-                ]
-            )
+            pdf.beginPage()
             processed.draw(in: CGRect(origin: .zero, size: processed.size))
         }
         try? data.write(to: dest)
@@ -148,7 +143,6 @@ struct DocCamera: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> VNDocumentCameraViewController {
         let controller = VNDocumentCameraViewController()
         controller.delegate = context.coordinator
-        controller.qualityCheck = true
         controller.userConfirmation = true
         return controller
     }

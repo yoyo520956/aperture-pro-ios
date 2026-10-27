@@ -8,7 +8,7 @@ struct PanoramaView: View {
     var body: some View {
         VStack {
             Spacer()
-            if let stitched {
+            if let stitchedOut = stitched {
                 HStack(spacing: CNTheme.sp16) {
                     Button {
                         stitched = nil
@@ -32,7 +32,7 @@ struct PanoramaView: View {
                         .font(CNTheme.f12)
                     }
                     .frame(width: 64, height: 64)
-                    .tint(Color(CNTheme.cinnabar))
+                    .tint(CNTheme.cinnabar)
                 }
             } else {
                 progressCard
@@ -50,7 +50,7 @@ struct PanoramaView: View {
                             .font(CNTheme.f14)
                             .fontWeight(.semibold)
                     }
-                    .tint(engine.panoramaEngine.isCollecting ? Color(CNTheme.indigo) : Color(CNTheme.inkFaint))
+                    .tint(engine.panoramaEngine.isCollecting ? CNTheme.indigo : CNTheme.inkFaint)
                 }
                 .padding(.bottom, CNTheme.sp24)
             }
@@ -64,19 +64,19 @@ struct PanoramaView: View {
         VStack(spacing: CNTheme.sp8) {
             HStack(spacing: CNTheme.sp8) {
                 Circle()
-                    .fill(engine.panoramaEngine.isCollecting ? Color(CNTheme.indigo) : Color(CNTheme.inkFaint))
+                    .fill(engine.panoramaEngine.isCollecting ? CNTheme.indigo : CNTheme.inkFaint)
                     .frame(width: 10, height: 10)
                 Text(engine.panoramaEngine.isCollecting ? "横扫手机，取景中" : "请横扫手机")
                     .font(CNTheme.f15)
-                    .foregroundStyle(Color(CNTheme.ink))
+                    .foregroundStyle(CNTheme.ink)
             }
             ProgressView(value: Double(engine.panoramaEngine.capturedCount),
                         total: Double(engine.panoramaEngine.targetCount))
-                .tint(Color(CNTheme.indigo))
+                .tint(CNTheme.indigo)
                 .padding(.horizontal, CNTheme.sp32)
             Text("\(engine.panoramaEngine.capturedCount) / \(engine.panoramaEngine.targetCount)")
                 .font(CNTheme.f10)
-                .foregroundStyle(Color(CNTheme.inkFaint))
+                .foregroundStyle(CNTheme.inkFaint)
         }
         .padding(CNTheme.sp16)
         .frame(maxWidth: .infinity)

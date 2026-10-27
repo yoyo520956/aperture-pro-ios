@@ -23,7 +23,7 @@ enum PHLibraryService {
             // 官方范式：forAsset() + addResource(with:data:)
             let request = PHAssetCreationRequest.forAsset()
             request.addResource(with: .photo, data: data, options: nil)
-        } completionHandler: { success in
+        } completionHandler: { success, _ in
             ok = success
             sem.signal()
         }
@@ -38,7 +38,7 @@ enum PHLibraryService {
             // 官方范式：forAsset() + addResource(with:fileURL:)
             let request = PHAssetCreationRequest.forAsset()
             request.addResource(with: .video, fileURL: url, options: nil)
-        } completionHandler: { success in
+        } completionHandler: { success, _ in
             ok = success
             sem.signal()
         }
@@ -53,7 +53,7 @@ enum PHLibraryService {
             let request = PHAssetCreationRequest.forAsset()
             request.addResource(with: .photo, data: photoData, options: nil)
             request.addResource(with: .pairedVideo, fileURL: videoURL, options: nil)
-        } completionHandler: { success in
+        } completionHandler: { success, _ in
             ok = success
             sem.signal()
         }
@@ -71,7 +71,6 @@ enum PHLibraryService {
     /// 最近 limit 条系统媒体（占位，缩略图由视图各自加载）
     static func systemMedia(limit: Int = 120) -> [SystemPhoto] {
         let options = PHFetchOptions()
-        options.resultType = .image
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         let result = PHAsset.fetchAssets(with: options, options: nil)
         var out: [SystemPhoto] = []
@@ -141,14 +140,14 @@ enum PHLibraryService {
         PHImageManager.default().requestExportSession(
             forVideo: asset,
             options: options,
-            exportPreset: AVAssetExportPresetPassthroughQuality
+            exportPreset: AVAssetExportPresetHighestQuality
         ) { session, info in
             guard let session else {
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
             session.outputURL = outURL
-            session.outputFileType = .mpeg4
+            session.outputFileType = .mp4
             try? FileManager.default.removeItem(at: outURL)
             session.exportAsynchronously {
                 DispatchQueue.main.async {

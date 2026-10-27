@@ -144,7 +144,7 @@ final class CameraScannerViewController: UIViewController {
 
 extension CameraScannerViewController: AVCaptureMetadataOutputObjectsDelegate {
     func metadataOutput(_ output: AVCaptureMetadataOutput,
-                        didOutput metadataObjects: [AnyMetadataObject],
+                        didOutput metadataObjects: [AVMetadataObject],
                         from connection: AVCaptureConnection) {
         guard let obj = metadataObjects.first?.object as? AVMetadataMachineReadableCodeObject,
               let value = obj.stringValue else { return }

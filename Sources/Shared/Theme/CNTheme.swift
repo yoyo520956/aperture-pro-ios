@@ -62,12 +62,12 @@ enum CNTheme {
     // MARK: 通用页面容器
 
     static func pageBackground() -> some View {
-        Color(CNTheme.paper).ignoresSafeArea()
+        CNTheme.paper.ignoresSafeArea()
     }
 
     static func card() -> some View {
         RoundedRectangle(cornerRadius: r12)
-            .fill(Color(CNTheme.paperDeep))
+            .fill(CNTheme.paperDeep)
     }
 
     /// 分段式模式切换 chip
@@ -85,11 +85,11 @@ enum CNTheme {
                     Text(title)
                         .font(CNTheme.f10)
                 }
-                .foregroundStyle(active ? .white : Color(CNTheme.inkSub))
+                .foregroundStyle(active ? .white : CNTheme.inkSub)
                 .frame(width: 56, height: 56)
                 .background(
                     RoundedRectangle(cornerRadius: CNTheme.r12)
-                        .fill(active ? Color(CNTheme.indigo) : Color(CNTheme.paperDeep))
+                        .fill(active ? CNTheme.indigo : CNTheme.paperDeep)
                 )
             }
         }
@@ -107,6 +107,6 @@ enum CNTheme {
         let c = UIColor { trait in
             trait.userInterfaceStyle == .dark ? hex(dark) : hex(light)
         }
-        return Color(c)
+        return Color(uiColor: c)
     }
 }

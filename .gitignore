@@ -11,3 +11,10 @@ build/
 # 杂项
 test*.txt
 .DS_Store
+
+# 本地辅助脚本
+push.py
+ci_log.py
+docs_sig.py
+patch_photos.py
+patch_photos2.py

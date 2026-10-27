@@ -57,14 +57,14 @@ struct SettingsView: View {
                             Spacer()
                             Text(icloud.lastMessage)
                                 .font(CNTheme.f12)
-                                .foregroundStyle(Color(CNTheme.inkFaint))
+                                .foregroundStyle(CNTheme.inkFaint)
                         }
                         Button("立即同步") {
                             icloud.scheduleBackgroundSync()
                             icloud.backgroundSync()
                         }
                         .font(CNTheme.f14)
-                        .tint(Color(CNTheme.indigo))
+                        .tint(CNTheme.indigo)
                     }
                 } header: {
                     Text("数据")
@@ -81,7 +81,7 @@ struct SettingsView: View {
                             Text("夜墨（深）").tag(2)
                         }
                         .pickerStyle(.menu)
-                        .tint(Color(CNTheme.indigo))
+                        .tint(CNTheme.indigo)
                     }
                 } header: {
                     Text("中式皮")
@@ -94,12 +94,12 @@ struct SettingsView: View {
                     LabeledContent("版本") {
                         Text("1.1.0 (20261027.01)")
                             .font(CNTheme.f14)
-                            .foregroundStyle(Color(CNTheme.inkSub))
+                            .foregroundStyle(CNTheme.inkSub)
                     }
                     LabeledContent("制作者") {
                         Text("主人与姐姐")
                             .font(CNTheme.f14)
-                            .foregroundStyle(Color(CNTheme.inkSub))
+                            .foregroundStyle(CNTheme.inkSub)
                     }
                 } header: {
                     Text("关于")
@@ -109,7 +109,7 @@ struct SettingsView: View {
             .scrollContentBackground(.hidden)
             .background(CNTheme.pageBackground())
         }
-        .tint(Color(CNTheme.indigo))
+        .tint(CNTheme.indigo)
         .onChange(of: colorSchemeIndex) { index in
             appState.colorScheme = index == 0 ? nil : (index == 1 ? .light : .dark)
         }
@@ -154,17 +154,17 @@ struct SettingsView: View {
             HStack(spacing: CNTheme.sp8) {
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .light))
-                    .foregroundStyle(Color(CNTheme.indigo))
+                    .foregroundStyle(CNTheme.indigo)
                     .frame(width: 24)
                 Text(title)
                     .font(CNTheme.f15)
-                    .foregroundStyle(Color(CNTheme.ink))
+                    .foregroundStyle(CNTheme.ink)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .light))
-                    .foregroundStyle(Color(CNTheme.inkFaint))
+                    .foregroundStyle(CNTheme.inkFaint)
             }
         }
-        .tint(Color(CNTheme.ink))
+        .tint(CNTheme.ink)
     }
 }

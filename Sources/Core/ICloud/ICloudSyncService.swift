@@ -14,7 +14,7 @@ final class ICloudSyncService: ObservableObject {
 
     private static let bgTaskID = "com.aperture.pro.icloud"
 
-    private static var localMediaDir: URL {
+    nonisolated private static var localMediaDir: URL {
         let docs = FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask).first!
         let dir = docs.appendingPathComponent("Media", isDirectory: true)
@@ -29,24 +29,23 @@ final class ICloudSyncService: ObservableObject {
             lastMessage = "本机未开启 iCloud 存储"
             return
         }
-        let ok = BGTaskScheduler.shared().register(
+        BGTaskScheduler.shared.register(
             forTaskWithIdentifier: Self.bgTaskID, using: nil
-        ) { task in
-            task.expirationHandler = { [weak self] in
-                Task { @MainActor [weak self] in
-                    self?.backgroundSync()
-                }
-            }
+        ) { (task: BGProcessingTask) in
+            task.expirationHandler = {}
             Task { @MainActor [weak self] in
-                self?.backgroundSync()
+                await self?.syncAll()
                 task.setTaskCompleted(success: true)
             }
         }
-        if ok {
-            let req = BGProcessingTaskRequest(identifier: Self.bgTaskID)
-            req.requiresNetworkAccess = true
-            req.requiresExternalPower = false
-            BGTaskScheduler.shared().submit(req)
+        let req = BGProcessingTaskRequest(identifier: Self.bgTaskID)
+        req.requiresNetworkConnectivity = true
+        req.requiresExternalPower = false
+        do {
+            try BGTaskScheduler.shared.submit(req)
+            lastMessage = "已排程后台同步"
+        } catch {
+            lastMessage = "排程失败：\(error.localizedDescription)"
         }
     }
 
@@ -116,7 +115,7 @@ final class ICloudSyncService: ObservableObject {
         }
         if !manifest.isEmpty {
             // 清单内所有名称已处理（云端已删）→ 清空清单
-            try? manifestURL.removeItem()
+            try? FileManager.default.removeItem(at: manifestURL)
             manifest.removeAll()
         }
 
@@ -126,8 +125,8 @@ final class ICloudSyncService: ObservableObject {
             let name = file.lastPathComponent
             if name.hasPrefix(".") { continue }
             let dest = cloudMedia.appendingPathComponent(name)
-            let localM = try? fm.contentModificationDate(atPath: file.path)
-            let cloudM = try? fm.contentModificationDate(atPath: dest.path)
+            let localM = modDate(fm, file)
+            let cloudM = modDate(fm, dest)
             if fm.fileExists(atPath: dest.path) {
                 if let lm = localM, let cm = cloudM, lm <= cm {
                     // 云端更新：拉回并备份本地旧版
@@ -162,6 +161,11 @@ final class ICloudSyncService: ObservableObject {
 
         if uploaded + pulled + deleted == 0 { return "云盘已是最新" }
         return "上传 \(uploaded) · 拉回 \(pulled) · 冲突备份 \(conflicts) · 远端删除 \(deleted)"
+    }
+
+    nonisolated private static func modDate(_ fm: FileManager, _ url: URL) -> Date? {
+        let attrs = try? fm.attributesOfItem(atPath: url.path)
+        return attrs?[.modificationDate] as? Date
     }
 
     // MARK: - 删除传播

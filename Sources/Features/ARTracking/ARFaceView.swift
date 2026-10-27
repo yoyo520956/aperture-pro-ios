@@ -2,7 +2,7 @@ import SwiftUI
 import ARKit
 
 /// AR 面部追踪宿主视图（ARCameraView + 角点叠加层）
-/// 用 ARFaceConfiguration 启动，否则 frame.faceAnchor 永远为空
+/// 用 ARFaceTrackingConfiguration 启动，否则 frame.faceAnchor 永远为空
 @available(iOS 16.0, *)
 struct ARFaceView: View {
     @StateObject private var arState = ARState()
@@ -38,15 +38,15 @@ struct ARFaceView: View {
     }
 
     private func runFaceTracking() {
-        let config = ARFaceConfiguration()
-        config.lightEstimationEnabled = true
-        do {
-            try session.run(config, options: [.resetTracking, .removeExistingAnchors])
-            arState.isTracking = true
-            arState.errorMessage = nil
-        } catch {
+        guard ARFaceTrackingConfiguration.isSupported else {
             arState.isTracking = false
-            arState.errorMessage = "启动 AR 追踪失败：\(error.localizedDescription)"
+            arState.errorMessage = "此设备不支持面部追踪（需要原深感摄像头）"
+            return
         }
+        let config = ARFaceTrackingConfiguration()
+        config.isLightEstimationEnabled = true
+        session.run(config, options: [.resetTracking, .removeExistingAnchors])
+        arState.isTracking = true
+        arState.errorMessage = nil
     }
 }
