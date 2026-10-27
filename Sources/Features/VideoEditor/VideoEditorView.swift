@@ -55,11 +55,11 @@ struct VideoEditorView: View {
                 statusViews
             }
             .navigationTitle("视频编辑")
-            .onChange(of: pickerItem) { _, item in
+            .onChange(of: pickerItem) { item in
                 handlePicked(item)
             }
         }
-        .toolbar(content: { editorToolbar })
+        .toolbar { editorToolbar }
     }
 
     // 拆分子表达式：避免单个 ViewBuilder 过大导致 type-check 超时
@@ -133,23 +133,14 @@ struct VideoEditorView: View {
     private var controlGrid: some View {
         VStack(spacing: 14) {
             rowLabel("倍速", value: String(format: "%.1f×", speed))
-            HStack(spacing: 10) {
-                ForEach([0.5, 1.0, 2.0, 4.0], id: \.self) { s in
-                    chip(s == speed ? String(format: "%.1f×", s) : String(format: "%.1f×", s),
-                         selected: s == speed) { speed = s }
-                }
-            }
+            speedPicker
             HStack(spacing: 10) {
                 Toggle("静音", isOn: $muted)
                     .font(.system(size: 13))
                 Spacer()
             }
             rowLabel("滤镜", value: filter.rawValue)
-            HStack(spacing: 8) {
-                ForEach(VideoFilter.allCases) { f in
-                    chip(f.rawValue, selected: filter == f) { filter = f }
-                }
-            }
+            filterPicker
             Button {
                 exportClip()
             } label: {
@@ -160,6 +151,22 @@ struct VideoEditorView: View {
             .disabled(exporting)
         }
         .padding(.horizontal)
+    }
+
+    private var speedPicker: some View {
+        HStack(spacing: 10) {
+            ForEach([0.5, 1.0, 2.0, 4.0], id: \.self) { s in
+                chip(String(format: "%.1f×", s), selected: s == speed) { speed = s }
+            }
+        }
+    }
+
+    private var filterPicker: some View {
+        HStack(spacing: 8) {
+            ForEach(VideoFilter.allCases) { f in
+                chip(f.rawValue, selected: filter == f) { filter = f }
+            }
+        }
     }
 
     private func rowLabel(_ t: String, value: String) -> some View {
@@ -239,7 +246,7 @@ struct VideoEditorView: View {
             }
         }
         .padding(.horizontal)
-        .onChange(of: addPicker) { _, items in
+        .onChange(of: addPicker) { items in
             Task { await addSegments(items) }
         }
     }
