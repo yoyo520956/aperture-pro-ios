@@ -54,7 +54,7 @@ enum LongImageStitcher {
                         img.draw(in: CGRect(x: 0, y: CGFloat(startX), width: CGFloat(normW), height: h))
                     }
                 } else {
-                    img.draw(in: CGRect(x: 0, y: y, width: normW, height: h))
+                    img.draw(in: CGRect(x: 0, y: y, width: CGFloat(normW), height: h))
                 }
                 y = startX + h
             }
